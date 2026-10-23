@@ -1,10 +1,15 @@
 # Build output
 target/
+!**/src/main/**/target/
+!**/src/test/**/target/
 
-# IDE
+# IntelliJ IDEA
 .idea/
 *.iml
 *.iws
+*.ipr
+
+# VS Code
 .vscode/
 
 # Local configuration and secrets (never committed, §4.5)
