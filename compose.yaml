@@ -1,0 +1,36 @@
+# Local dependencies for development. Credentials are local-only defaults; override them in .env.
+name: warden
+
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: warden
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${WARDEN_DB_SUPERUSER_PASSWORD:-postgres_local}
+      WARDEN_DB_OWNER_PASSWORD: ${WARDEN_DB_OWNER_PASSWORD:-warden_owner_local}
+      WARDEN_DB_APP_PASSWORD: ${WARDEN_DB_APP_PASSWORD:-warden_app_local}
+    ports:
+      - "127.0.0.1:${WARDEN_DB_PORT:-5432}:5432"
+    volumes:
+      - ./ops/postgres/init:/docker-entrypoint-initdb.d:ro
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d warden"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:8
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:${WARDEN_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  pg-data:

@@ -1,0 +1,2 @@
+-- Baseline migration. It establishes the Flyway schema history; schema objects are added
+-- by later versioned migrations. Applied migrations are never edited (REQ-CM-003).
