@@ -46,6 +46,9 @@
 		<spotless.version>3.10.4</spotless.version>
 		<palantir-java-format.version>2.102.0</palantir-java-format.version>
 		<jacoco.version>0.8.15</jacoco.version>
+
+		<!-- Filled by the JaCoCo agent; empty default keeps @{argLine} valid when JaCoCo is skipped -->
+		<argLine/>
 	</properties>
 
 	<dependencyManagement>
@@ -144,16 +147,20 @@
 			<artifactId>spring-modulith-starter-core</artifactId>
 		</dependency>
 
-		<!-- Observability -->
+		<!-- Observability. Boot 4 needs both the tracing auto-configuration module and the
+     Micrometer-to-OpenTelemetry bridge (OtelTracer); the module does not bring the bridge. -->
 		<dependency>
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-micrometer-tracing-opentelemetry</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>io.micrometer</groupId>
 			<artifactId>micrometer-tracing-bridge-otel</artifactId>
 		</dependency>
-
 		<!-- API documentation (/v3/api-docs only, no Swagger UI) -->
 		<dependency>
 			<groupId>org.springdoc</groupId>
@@ -180,6 +187,16 @@
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-micrometer-metrics-test</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-micrometer-tracing-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
@@ -248,13 +265,15 @@
 				</executions>
 			</plugin>
 
-			<!-- Compiler warnings visible but not fatal; append keeps the parent's arguments -->
+			<!-- Compiler warnings visible but not fatal; append keeps the parent's arguments.
+     No annotation processors are used: implicit processing is disabled explicitly. -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
 				<configuration>
 					<compilerArgs combine.children="append">
 						<arg>-Xlint:all</arg>
+						<arg>-proc:none</arg>
 					</compilerArgs>
 				</configuration>
 			</plugin>
@@ -281,10 +300,36 @@
 				</executions>
 			</plugin>
 
-			<!-- Integration tests (*IT); unit tests (*Test) run with Surefire by default -->
+			<!-- Exposes the Mockito jar path as the property org.mockito:mockito-core:jar -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>resolve-mockito-agent</id>
+						<goals>
+							<goal>properties</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!-- Unit tests (*Test). Mockito is loaded as a static agent; @{argLine} keeps the JaCoCo agent. -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<argLine>@{argLine} -javaagent:@{org.mockito:mockito-core:jar} -Xshare:off</argLine>
+				</configuration>
+			</plugin>
+
+			<!-- Integration tests (*IT), same agents as the unit tests -->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-failsafe-plugin</artifactId>
+				<configuration>
+					<argLine>@{argLine} -javaagent:@{org.mockito:mockito-core:jar} -Xshare:off</argLine>
+				</configuration>
 				<executions>
 					<execution>
 						<goals>
@@ -295,8 +340,7 @@
 				</executions>
 			</plugin>
 
-			<!-- Coverage of unit and integration tests in a single data file; the 80 % gate arrives in step 1.25.
-                 If <argLine> is ever configured in Surefire or Failsafe, it must start with @{argLine}. -->
+			<!-- Coverage of unit and integration tests in a single data file; the 80 % gate arrives in step 1.25 -->
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
