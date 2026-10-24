@@ -1,3 +1,26 @@
 spring:
   application:
     name: warden
+
+  # Runtime connections use the application role. It owns no table, so Row Level Security
+  # applies to it (ADR-013, SDD V06). No default password: only the local profile has one.
+  datasource:
+    url: ${WARDEN_DB_URL:jdbc:postgresql://localhost:${WARDEN_DB_PORT:5432}/warden}
+    username: ${WARDEN_DB_APP_USER:warden_app}
+    password: ${WARDEN_DB_APP_PASSWORD:}
+
+  # Migrations run at startup as the schema owner (REQ-INST-003); checksums of applied
+  # migrations are validated on every start (REQ-CM-003).
+  flyway:
+    url: ${spring.datasource.url}
+    user: ${WARDEN_DB_OWNER_USER:warden_owner}
+    password: ${WARDEN_DB_OWNER_PASSWORD:}
+    validate-on-migrate: true
+
+  jpa:
+    open-in-view: false
+
+  data:
+    redis:
+      host: ${WARDEN_REDIS_HOST:localhost}
+      port: ${WARDEN_REDIS_PORT:6379}

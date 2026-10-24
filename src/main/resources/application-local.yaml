@@ -1,0 +1,8 @@
+# Local development profile. Matches the services and the local-only default credentials
+# of compose.yaml. Never use these values outside a developer machine: every other
+# environment provides WARDEN_DB_APP_PASSWORD and WARDEN_DB_OWNER_PASSWORD.
+spring:
+  datasource:
+    password: ${WARDEN_DB_APP_PASSWORD:warden_app_local}
+  flyway:
+    password: ${WARDEN_DB_OWNER_PASSWORD:warden_owner_local}
