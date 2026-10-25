@@ -2,6 +2,14 @@ spring:
   application:
     name: warden
 
+  main:
+    banner-mode: off
+
+  # HTTP requests run on virtual threads; blocking resources are bounded explicitly (SDD V16).
+  threads:
+    virtual:
+      enabled: true
+
   # Runtime connections use the application role. It owns no table, so Row Level Security
   # applies to it (ADR-013, SDD V06). No default password: only the local profile has one.
   datasource:
@@ -24,3 +32,18 @@ spring:
     redis:
       host: ${WARDEN_REDIS_HOST:localhost}
       port: ${WARDEN_REDIS_PORT:6379}
+
+# One JSON object per log line, including traceId and spanId from the MDC (REQ-OBS-004, SDD V19).
+logging:
+  structured:
+    format:
+      console: logstash
+
+# Actuator runs on a separate port that is never published outside the deployment network.
+management:
+  server:
+    port: ${WARDEN_MANAGEMENT_PORT:8081}
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
