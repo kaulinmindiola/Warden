@@ -27,14 +27,14 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Defines the trust model and the portfolio's core competence; CON-006.
 - **Affected elements:** V01, V08, V11, V18; REQ-INT-003, 004; DEC-051.
 - **Baseline direction:** Warden is the sole issuer and validator; no JWKS in 1.0.
-- **Status:** READY FOR ANALYSIS · **Phase:** 1
+- **Status:** ACCEPTED — [ADR-002](ADR-002-self-issued-tokens.md) · **Phase:** 1
 
 ### ADR-003 — Roles resolved per request, outside the JWT
 - **Description:** Where workspace roles are evaluated so that changes apply on the next request.
 - **Reason:** Trade-off between per-request DB cost and authorization freshness (BR-004).
 - **Affected elements:** V05, V08, V11, V12; REQ-FUNC-022; REQ-PERF-003.
 - **Baseline direction:** No roles in the token; uncached membership lookup per workspace request.
-- **Status:** READY FOR ANALYSIS · **Phase:** 1
+- **Status:** ACCEPTED — [ADR-003](ADR-003-roles-outside-the-token.md) · **Phase:** 1
 
 ### ADR-004 — 404 for non-members, 403 for insufficient role
 - **Description:** Error semantics that avoid revealing workspace existence.
@@ -97,7 +97,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Resolves SRS TBD-03; hard to change once consumers integrate.
 - **Affected elements:** V08, V18; REQ-INT-004; REQ-SEC-002; REQ-INST-002.
 - **Baseline direction:** ES256, PEM key from environment, current + previous key for verification, ephemeral in `local`.
-- **Status:** PLANNED · **Phase:** 1
+- **Status:** ACCEPTED — [ADR-012](ADR-012-access-token-signing-and-keys.md) · **Phase:** 1
 
 ### ADR-013 — Persistence access strategy, migrations and database roles
 - **Description:** ORM vs SQL for critical paths, migration tool and the role model that makes RLS and append-only audit effective.
