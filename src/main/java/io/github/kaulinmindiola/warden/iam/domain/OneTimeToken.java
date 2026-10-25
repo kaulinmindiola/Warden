@@ -1,5 +1,12 @@
 package io.github.kaulinmindiola.warden.iam.domain;
 
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -12,6 +19,8 @@ import java.util.UUID;
  * before {@code expiresAt}; at {@code expiresAt} it is already expired. At most one token per user
  * and purpose is active: issuing a new one invalidates the previous ones (REQ-FUNC-007, 019).
  */
+@Entity
+@Table(name = "one_time_token")
 public class OneTimeToken {
 
     /** What a token is for, and how long it lives. */
@@ -32,13 +41,31 @@ public class OneTimeToken {
         }
     }
 
-    private final UUID id;
-    private final UUID userId;
-    private final Purpose purpose;
-    private final TokenHash hash;
-    private final Instant expiresAt;
+    @Id
+    private UUID id;
+
+    @Column(name = "user_id", nullable = false)
+    private UUID userId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "purpose", nullable = false)
+    private Purpose purpose;
+
+    @Convert(converter = TokenHashConverter.class)
+    @Column(name = "token_hash", nullable = false)
+    private TokenHash hash;
+
+    @Column(name = "expires_at", nullable = false)
+    private Instant expiresAt;
+
+    @Column(name = "consumed_at")
     private Instant consumedAt;
+
+    @Column(name = "invalidated_at")
     private Instant invalidatedAt;
+
+    /** For JPA only. */
+    protected OneTimeToken() {}
 
     private OneTimeToken(UUID id, UUID userId, Purpose purpose, TokenHash hash, Instant expiresAt) {
         this.id = Objects.requireNonNull(id, "id");
