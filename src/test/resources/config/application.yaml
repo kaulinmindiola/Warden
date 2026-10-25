@@ -1,0 +1,6 @@
+# Test classpath only: loaded in addition to the main application.yaml and takes precedence
+# over it. Tests run without configured keys, so missing keys are generated in memory. The
+# prod-like profile still refuses them (REQ-INST-002).
+warden:
+  keys:
+    allow-ephemeral: true

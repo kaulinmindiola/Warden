@@ -33,6 +33,16 @@ spring:
       host: ${WARDEN_REDIS_HOST:localhost}
       port: ${WARDEN_REDIS_PORT:6379}
 
+# Key material (REQ-INST-002, SDD V18). Never commit values: they come only from the
+# environment. Only the local profile allows generating missing keys at startup.
+warden:
+  keys:
+    jwt-signing-key: ${WARDEN_JWT_SIGNING_KEY:}
+    jwt-key-id: ${WARDEN_JWT_KEY_ID:}
+    secret-keys: ${WARDEN_SECRET_KEYS:}
+    hmac-key: ${WARDEN_HMAC_KEY:}
+    allow-ephemeral: false
+
 # One JSON object per log line, including traceId and spanId from the MDC (REQ-OBS-004, SDD V19).
 logging:
   structured:

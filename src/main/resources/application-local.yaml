@@ -6,3 +6,9 @@ spring:
     password: ${WARDEN_DB_APP_PASSWORD:warden_app_local}
   flyway:
     password: ${WARDEN_DB_OWNER_PASSWORD:warden_owner_local}
+
+# Missing keys are generated in memory at startup: tokens and sealed secrets do not survive a
+# restart. Set the WARDEN_* key variables to keep them.
+warden:
+  keys:
+    allow-ephemeral: true
