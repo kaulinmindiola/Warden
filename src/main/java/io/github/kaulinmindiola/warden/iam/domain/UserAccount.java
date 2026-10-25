@@ -1,5 +1,12 @@
 package io.github.kaulinmindiola.warden.iam.domain;
 
+import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.UUID;
@@ -9,14 +16,33 @@ import java.util.UUID;
  * with a unique constraint. Accounts start with an unverified e-mail; an unverified account can
  * still log in (REQ-FUNC-008) but cannot create workspaces or accept invitations (BR-009, BR-010).
  */
+@Entity
+@Table(name = "user_account")
 public class UserAccount {
 
-    private final UUID id;
-    private final EmailAddress email;
+    @Id
+    private UUID id;
+
+    @Convert(converter = EmailAddressConverter.class)
+    @Column(name = "email_normalized", nullable = false)
+    private EmailAddress email;
+
+    @Convert(converter = PasswordHashConverter.class)
+    @Column(name = "password_hash", nullable = false)
     private PasswordHash passwordHash;
+
+    @Column(name = "email_verified_at")
     private Instant emailVerifiedAt;
-    private final SupportedLocale registrationLocale;
-    private final Instant createdAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "registration_locale", nullable = false)
+    private SupportedLocale registrationLocale;
+
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+
+    /** For JPA only. */
+    protected UserAccount() {}
 
     private UserAccount(
             UUID id,
