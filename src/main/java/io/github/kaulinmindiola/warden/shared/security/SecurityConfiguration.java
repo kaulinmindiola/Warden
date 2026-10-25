@@ -23,13 +23,14 @@ public class SecurityConfiguration {
     /**
      * Paths reachable without authentication: the public endpoints of REQ-SEC-001 and the
      * actuator paths, which exist only on the management port, never published outside the
-     * deployment network.
+     * deployment network. API paths match exactly, so sub-paths stay protected.
      */
     static final String[] PUBLIC_PATHS = {
         "/actuator/health",
         "/actuator/health/**",
         "/actuator/prometheus",
-        ApiWebConfiguration.API_PREFIX + "/auth/register"
+        ApiWebConfiguration.API_PREFIX + "/auth/register",
+        ApiWebConfiguration.API_PREFIX + "/auth/email/verify"
     };
 
     @Bean
