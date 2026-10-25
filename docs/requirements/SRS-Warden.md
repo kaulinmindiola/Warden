@@ -1688,9 +1688,9 @@ N/A — Warden does not incorporate machine learning models or data-driven compo
 | REQ-INST-002 | Inspection | TBD | Pending | — |
 | REQ-INST-003 | Test | TBD | Pending | — |
 | REQ-INST-004 | Demonstration | TBD | Pending | — |
-| REQ-BUILD-001 | Demonstration | TBD | Pending | — |
-| REQ-BUILD-002 | Inspection | TBD | Pending | — |
-| REQ-BUILD-003 | Inspection | TBD | Pending | — |
+| REQ-BUILD-001 | Demonstration | [CI workflow](../../.github/workflows/ci.yml) | Passed | `./mvnw -B verify` succeeds on a fresh GitHub-hosted runner with only Temurin 21 and Docker, including integration tests on PostgreSQL 17 and Redis 8 |
+| REQ-BUILD-002 | Inspection | [CI workflow](../../.github/workflows/ci.yml) | Passed | Branch protection on `main` requires the `verify` check, linear history and pull requests, also for administrators; a pull request with a formatting violation was blocked:  |
+| REQ-BUILD-003 | Inspection | [pom.xml](../../pom.xml) | Passed | Maven Enforcer `banDynamicVersions` runs in every build; versions pinned by POC-001 |
 | REQ-BUILD-004 | Inspection | TBD | Pending | — |
 | REQ-BUILD-005 | Inspection | TBD | Pending | — |
 | REQ-DIST-001 | Test | TBD | Pending | — |
@@ -1705,8 +1705,8 @@ N/A — Warden does not incorporate machine learning models or data-driven compo
 | REQ-PORT-001 | Demonstration | TBD | Pending | — |
 | REQ-COST-001 | Inspection | TBD | Pending | — |
 | REQ-DEAD-001 | Inspection | TBD | Pending | — |
-| REQ-POC-001 | Demonstration | TBD | Pending | — |
-| REQ-POC-002 | Demonstration | TBD | Pending | — |
+| REQ-POC-001 | Demonstration | [POC-001 report](../poc/POC-001-library-compatibility.md) | Passed | One smoke test per library on Spring Boot 4.1.2 (11 unit, 10 integration); no fallback needed |
+| REQ-POC-002 | Demonstration | [RlsConnectionPoolLeakIT](../../src/test/java/io/github/kaulinmindiola/warden/poc/RlsConnectionPoolLeakIT.java) | Passed | 1 000 transactions alternating two tenants on a pool of 2 connections: zero cross reads, connection reuse proven; see the [POC-002 report](../poc/POC-002-rls-pool.md) |
 | REQ-CM-001 | Inspection | TBD | Pending | — |
 | REQ-CM-002 | Inspection | TBD | Pending | — |
 | REQ-CM-003 | Test | TBD | Pending | — |
