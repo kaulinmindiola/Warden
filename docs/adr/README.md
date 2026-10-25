@@ -20,7 +20,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Shapes the whole structure, deployment and testing strategy; costly to reverse.
 - **Affected elements:** V02, V03, V04, V20, V21; CON-005; REQ-MAINT-001, 002; DEC-052.
 - **Baseline direction:** One deployable, five modules verified by Spring Modulith + ArchUnit.
-- **Status:** READY FOR ANALYSIS · **Phase:** 0
+- **Status:** ACCEPTED — [ADR-001](ADR-001-modular-monolith.md) · **Phase:** 0
 
 ### ADR-002 — Self-issued tokens instead of an external IdP
 - **Description:** Whether Warden issues and validates its own tokens or delegates to an identity provider.
@@ -48,7 +48,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** G-01 is the top driver; pooled-connection leakage is the main technical risk.
 - **Affected elements:** V06, V07, V12; REQ-SEC-012; REQ-POC-002; DEC-016.
 - **Baseline direction:** Three layers: route membership, Hibernate filter + explicit `workspaceId`, RLS with transaction-local GUCs and `NULLIF`.
-- **Status:** READY FOR ANALYSIS (after POC-002) · **Phase:** 0–2
+- **Status:** IN PROGRESS — [ADR-005](ADR-005-tenant-isolation-rls.md) proposed; accepted when layers 1 and 2 are verified · **Phase:** 0–2
 
 ### ADR-006 — Atomic refresh-token rotation and reuse detection
 - **Description:** How to rotate refresh tokens so that concurrent use yields exactly one winner and reuse revokes the session.
@@ -104,7 +104,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Underpins isolation (non-owner role) and audit integrity (REQ-SEC-016).
 - **Affected elements:** V03, V06, V07; REQ-INST-003; REQ-CM-003.
 - **Baseline direction:** Spring Data JPA/Hibernate for aggregates, `JdbcClient` for conditional updates and claims; Flyway; `warden_owner` / `warden_app` roles.
-- **Status:** PLANNED · **Phase:** 0–1
+- **Status:** ACCEPTED — [ADR-013](ADR-013-persistence-migrations-roles.md) · **Phase:** 0–1
 
 ### ADR-014 — Rate-limiting mechanism and local fallback
 - **Description:** Algorithm, store and key design for all limits, including degradation without Redis.
@@ -153,7 +153,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Redis 7.4 is not OSI-licensed; Redis 8 adds AGPLv3; Valkey is BSD. A licence-compatible choice is needed for REQ-COST-001.
 - **Affected elements:** V06, V21; CON-004, CON-007; DEP-002; REQ-COST-001.
 - **Baseline direction:** Redis 8.x under AGPLv3, unmodified and self-hosted; Valkey as drop-in fallback.
-- **Status:** PLANNED · **Phase:** 0
+- **Status:** ACCEPTED — [ADR-020](ADR-020-redis-distribution-licence.md) · **Phase:** 0
 
 ## Suggested development order
 
