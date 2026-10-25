@@ -30,7 +30,8 @@ public class SecurityConfiguration {
         "/actuator/health/**",
         "/actuator/prometheus",
         ApiWebConfiguration.API_PREFIX + "/auth/register",
-        ApiWebConfiguration.API_PREFIX + "/auth/email/verify"
+        ApiWebConfiguration.API_PREFIX + "/auth/email/verify",
+        ApiWebConfiguration.API_PREFIX + "/auth/login"
     };
 
     @Bean
