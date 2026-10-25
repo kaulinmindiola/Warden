@@ -54,7 +54,7 @@ public class ProblemDetailsAdvice {
 
     @ExceptionHandler(ProblemException.class)
     ResponseEntity<ProblemDetail> handleProblem(ProblemException ex, HttpServletRequest request) {
-        return respond(ex.type(), ex.detail(), List.of(), new HttpHeaders(), request, traceId());
+        return respond(ex.type(), ex.detail(), ex.violations(), new HttpHeaders(), request, traceId());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
