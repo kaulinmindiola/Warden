@@ -46,6 +46,7 @@ import org.springframework.web.context.WebApplicationContext;
  */
 class ProblemDetailsContractIT extends IntegrationTest {
 
+    private static final String BASE = ApiWebConfiguration.API_PREFIX + "/test";
     private static final String SENSITIVE = "Sensitive internal detail in com.example.SecretRepository";
     private static final String TRACE_ID = "[0-9a-f]{32}";
 
@@ -63,16 +64,16 @@ class ProblemDetailsContractIT extends IntegrationTest {
     @EnumSource(ProblemType.class)
     @Verifies({"REQ-INT-005", "REQ-COMP-001"})
     void everyCatalogueTypeIsRenderedAsProblemDetails(ProblemType type) throws Exception {
-        expectProblem(mockMvc.perform(get("/test/problems/" + type.slug())), type)
+        expectProblem(mockMvc.perform(get(BASE + "/problems/" + type.slug())), type)
                 .andExpect(jsonPath("$.detail").value(type.defaultDetail()))
-                .andExpect(jsonPath("$.instance").value("/test/problems/" + type.slug()));
+                .andExpect(jsonPath("$.instance").value(BASE + "/problems/" + type.slug()));
     }
 
     @Test
     @Verifies("REQ-INT-005")
     void anInvalidBodyListsEachFieldError() throws Exception {
         expectProblem(
-                        mockMvc.perform(post("/test/validated")
+                        mockMvc.perform(post(BASE + "/validated")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("{\"name\":\"\",\"code\":\"too-long\"}")),
                         ProblemType.VALIDATION_ERROR)
@@ -83,20 +84,20 @@ class ProblemDetailsContractIT extends IntegrationTest {
     @Test
     @Verifies("REQ-INT-005")
     void anInvalidParameterIsReportedByName() throws Exception {
-        expectProblem(mockMvc.perform(get("/test/sized").param("size", "101")), ProblemType.VALIDATION_ERROR)
+        expectProblem(mockMvc.perform(get(BASE + "/sized").param("size", "101")), ProblemType.VALIDATION_ERROR)
                 .andExpect(jsonPath("$.errors[0].field").value("size"));
     }
 
     @Test
     void aParameterOfTheWrongTypeIsAValidationError() throws Exception {
-        expectProblem(mockMvc.perform(get("/test/sized").param("size", "abc")), ProblemType.VALIDATION_ERROR)
+        expectProblem(mockMvc.perform(get(BASE + "/sized").param("size", "abc")), ProblemType.VALIDATION_ERROR)
                 .andExpect(jsonPath("$.errors[0].field").value("size"));
     }
 
     @Test
     void anUnreadableBodyIsMalformed() throws Exception {
         expectProblem(
-                mockMvc.perform(post("/test/validated")
+                mockMvc.perform(post(BASE + "/validated")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{not json")),
                 ProblemType.MALFORMED_REQUEST);
@@ -104,19 +105,19 @@ class ProblemDetailsContractIT extends IntegrationTest {
 
     @Test
     void anUnmappedPathIsNotFound() throws Exception {
-        expectProblem(mockMvc.perform(get("/test/does-not-exist")), ProblemType.NOT_FOUND);
+        expectProblem(mockMvc.perform(get(BASE + "/does-not-exist")), ProblemType.NOT_FOUND);
     }
 
     @Test
     void anUnsupportedMethodIsMethodNotAllowedWithAllowHeader() throws Exception {
-        expectProblem(mockMvc.perform(delete("/test/problems/not-found")), ProblemType.METHOD_NOT_ALLOWED)
+        expectProblem(mockMvc.perform(delete(BASE + "/problems/not-found")), ProblemType.METHOD_NOT_ALLOWED)
                 .andExpect(header().string("Allow", containsString("GET")));
     }
 
     @Test
     void anUnsupportedContentTypeIsReported() throws Exception {
         expectProblem(
-                mockMvc.perform(post("/test/validated")
+                mockMvc.perform(post(BASE + "/validated")
                         .contentType(MediaType.TEXT_PLAIN)
                         .content("name")),
                 ProblemType.UNSUPPORTED_MEDIA_TYPE);
@@ -125,7 +126,7 @@ class ProblemDetailsContractIT extends IntegrationTest {
     @Test
     @Verifies("REQ-SEC-017")
     void anUnexpectedExceptionRevealsNoInternals() throws Exception {
-        expectProblem(mockMvc.perform(get("/test/boom")), ProblemType.INTERNAL_ERROR)
+        expectProblem(mockMvc.perform(get(BASE + "/boom")), ProblemType.INTERNAL_ERROR)
                 .andExpect(jsonPath("$.detail").value(ProblemType.INTERNAL_ERROR.defaultDetail()))
                 .andExpect(content().string(not(containsString("Sensitive"))))
                 .andExpect(content().string(not(containsString("IllegalStateException"))))

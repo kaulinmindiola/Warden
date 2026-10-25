@@ -36,12 +36,15 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  *
  * <p>Unexpected exceptions become a generic {@code internal-error}: no message, stack trace or
  * class name reaches the client (REQ-SEC-017); the exception is logged with the same trace id.
+ * Conversion failures report a generic reason because framework messages contain class names.
  * Spring Security exceptions are rethrown so the security filter chain answers them.
  */
 @RestControllerAdvice
 public class ProblemDetailsAdvice {
 
     private static final Logger log = LoggerFactory.getLogger(ProblemDetailsAdvice.class);
+
+    private static final String INVALID_VALUE = "has an invalid value";
 
     private final ObjectProvider<Tracer> tracer;
 
@@ -58,7 +61,8 @@ public class ProblemDetailsAdvice {
     ResponseEntity<ProblemDetail> handleInvalidBody(MethodArgumentNotValidException ex, HttpServletRequest request) {
         List<FieldViolation> violations = new ArrayList<>();
         for (FieldError error : ex.getBindingResult().getFieldErrors()) {
-            violations.add(new FieldViolation(error.getField(), reason(error.getDefaultMessage())));
+            String reason = error.isBindingFailure() ? INVALID_VALUE : reason(error.getDefaultMessage());
+            violations.add(new FieldViolation(error.getField(), reason));
         }
         for (ObjectError error : ex.getBindingResult().getGlobalErrors()) {
             violations.add(new FieldViolation(error.getObjectName(), reason(error.getDefaultMessage())));
@@ -82,7 +86,7 @@ public class ProblemDetailsAdvice {
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     ResponseEntity<ProblemDetail> handleTypeMismatch(
             MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
-        return validationProblem(List.of(new FieldViolation(ex.getName(), "has an invalid value")), request);
+        return validationProblem(List.of(new FieldViolation(ex.getName(), INVALID_VALUE)), request);
     }
 
     @ExceptionHandler(MissingServletRequestParameterException.class)
@@ -93,9 +97,17 @@ public class ProblemDetailsAdvice {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<ProblemDetail> handleUnreadableBody(HttpMessageNotReadableException ex, HttpServletRequest request) {
+        ProblemType type = hasCause(ex, RequestBodyTooLargeException.class)
+                ? ProblemType.PAYLOAD_TOO_LARGE
+                : ProblemType.MALFORMED_REQUEST;
+        return respond(type, type.defaultDetail(), List.of(), new HttpHeaders(), request, traceId());
+    }
+
+    @ExceptionHandler(RequestBodyTooLargeException.class)
+    ResponseEntity<ProblemDetail> handleBodyTooLarge(RequestBodyTooLargeException ex, HttpServletRequest request) {
         return respond(
-                ProblemType.MALFORMED_REQUEST,
-                ProblemType.MALFORMED_REQUEST.defaultDetail(),
+                ProblemType.PAYLOAD_TOO_LARGE,
+                ProblemType.PAYLOAD_TOO_LARGE.defaultDetail(),
                 List.of(),
                 new HttpHeaders(),
                 request,
@@ -106,6 +118,9 @@ public class ProblemDetailsAdvice {
     ResponseEntity<ProblemDetail> handleAnyOther(Exception ex, HttpServletRequest request) throws Exception {
         if (ex instanceof AuthenticationException || ex instanceof AccessDeniedException) {
             throw ex;
+        }
+        if (hasCause(ex, RequestBodyTooLargeException.class)) {
+            return handleBodyTooLarge(new RequestBodyTooLargeException(RequestSizeLimitFilter.MAX_BODY_BYTES), request);
         }
         if (ex instanceof ErrorResponse errorResponse) {
             ProblemType type = forFrameworkStatus(errorResponse.getStatusCode().value());
@@ -168,6 +183,18 @@ public class ProblemDetailsAdvice {
             case 503 -> ProblemType.SERVICE_UNAVAILABLE;
             default -> null;
         };
+    }
+
+    private static boolean hasCause(Throwable error, Class<? extends Throwable> type) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (type.isInstance(current)) {
+                return true;
+            }
+            if (current.getCause() == current) {
+                return false;
+            }
+        }
+        return false;
     }
 
     private static URI instanceOf(HttpServletRequest request) {
