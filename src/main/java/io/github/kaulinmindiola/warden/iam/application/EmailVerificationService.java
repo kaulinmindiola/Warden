@@ -16,15 +16,15 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Confirms an e-mail address with a verification token (UC-02, REQ-FUNC-006). The token is
- * consumed and the account verified in one transaction. Every reason a token cannot be used ends
- * in the same {@link InvalidOneTimeTokenException}.
+ * E-mail verification (UC-02): confirming an address with a token (REQ-FUNC-006) and resending
+ * the link (REQ-FUNC-007).
  */
 @Service
 public class EmailVerificationService {
 
     private final OneTimeTokenConsumer tokenConsumer;
     private final UserAccountRepository accounts;
+    private final EmailVerificationIssuer verificationIssuer;
     private final TokenHasher tokenHasher;
     private final Clock clock;
     private final TransactionTemplate transactions;
@@ -32,18 +32,21 @@ public class EmailVerificationService {
     public EmailVerificationService(
             OneTimeTokenConsumer tokenConsumer,
             UserAccountRepository accounts,
+            EmailVerificationIssuer verificationIssuer,
             TokenHasher tokenHasher,
             Clock clock,
             PlatformTransactionManager transactionManager) {
         this.tokenConsumer = tokenConsumer;
         this.accounts = accounts;
+        this.verificationIssuer = verificationIssuer;
         this.tokenHasher = tokenHasher;
         this.clock = clock;
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
     /**
-     * Verifies the e-mail of the account the token belongs to.
+     * Verifies the e-mail of the account the token belongs to. The token is consumed and the
+     * account verified in one transaction.
      *
      * @param token the token from the verification link
      * @throws InvalidOneTimeTokenException if the token is missing, malformed, unknown, used,
@@ -61,6 +64,23 @@ public class EmailVerificationService {
                     .orElseThrow(InvalidOneTimeTokenException::new);
             UserAccount account = accounts.findById(userId).orElseThrow(InvalidOneTimeTokenException::new);
             account.verifyEmail(now);
+        });
+    }
+
+    /**
+     * Sends a new verification link to the authenticated user, invalidating the previous ones.
+     *
+     * @param userId the authenticated user
+     * @throws EmailAlreadyVerifiedException if the e-mail is already verified
+     */
+    public void resend(UUID userId) {
+        transactions.executeWithoutResult(status -> {
+            UserAccount account = accounts.findById(userId)
+                    .orElseThrow(() -> new IllegalStateException("The authenticated account does not exist"));
+            if (account.isEmailVerified()) {
+                throw new EmailAlreadyVerifiedException();
+            }
+            verificationIssuer.issueFor(account, clock.instant());
         });
     }
 }

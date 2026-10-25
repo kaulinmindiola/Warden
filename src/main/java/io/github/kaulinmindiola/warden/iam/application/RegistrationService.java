@@ -1,26 +1,17 @@
 package io.github.kaulinmindiola.warden.iam.application;
 
-import io.github.kaulinmindiola.warden.iam.EmailVerificationRequested;
 import io.github.kaulinmindiola.warden.iam.RegistrationAttemptedOnExistingAccount;
 import io.github.kaulinmindiola.warden.iam.domain.EmailAddress;
 import io.github.kaulinmindiola.warden.iam.domain.InvalidEmailException;
 import io.github.kaulinmindiola.warden.iam.domain.InvalidPasswordException;
-import io.github.kaulinmindiola.warden.iam.domain.OneTimeToken;
 import io.github.kaulinmindiola.warden.iam.domain.PasswordHash;
 import io.github.kaulinmindiola.warden.iam.domain.PasswordHasher;
 import io.github.kaulinmindiola.warden.iam.domain.PasswordPolicy;
 import io.github.kaulinmindiola.warden.iam.domain.SupportedLocale;
-import io.github.kaulinmindiola.warden.iam.domain.TokenHash;
 import io.github.kaulinmindiola.warden.iam.domain.UserAccount;
-import io.github.kaulinmindiola.warden.iam.infrastructure.OneTimeTokenRepository;
 import io.github.kaulinmindiola.warden.iam.infrastructure.UserAccountRepository;
-import io.github.kaulinmindiola.warden.shared.crypto.SealedSecret;
-import io.github.kaulinmindiola.warden.shared.crypto.SecretCipher;
-import io.github.kaulinmindiola.warden.shared.crypto.SecureTokenGenerator;
-import io.github.kaulinmindiola.warden.shared.crypto.TokenHasher;
 import io.github.kaulinmindiola.warden.shared.id.UuidV7Generator;
 import io.github.kaulinmindiola.warden.shared.outbox.OutboxPublisher;
-import io.github.kaulinmindiola.warden.shared.outbox.Recipient;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -38,8 +29,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   <li>Validates the e-mail, the password policy and the locale, reporting every invalid field.
  *   <li>Always hashes the password, before looking the e-mail up and outside the transaction, so
  *       both outcomes cost the same work and no connection is held during Argon2.
- *   <li>New e-mail: creates the unverified account and a verification token, stores only the
- *       token hash and publishes {@code iam.EmailVerificationRequested} with the token sealed.
+ *   <li>New e-mail: creates the unverified account and issues a verification token through
+ *       {@link EmailVerificationIssuer}.
  *   <li>Existing e-mail: publishes {@code iam.RegistrationAttemptedOnExistingAccount} for the
  *       holder. A concurrent registration of the same e-mail ends the same way.
  * </ol>
@@ -55,12 +46,9 @@ public class RegistrationService {
     static final String UNSUPPORTED_LOCALE = "must be one of: es, en";
 
     private final UserAccountRepository accounts;
-    private final OneTimeTokenRepository tokens;
     private final PasswordPolicy passwordPolicy;
     private final PasswordHasher passwordHasher;
-    private final SecureTokenGenerator tokenGenerator;
-    private final TokenHasher tokenHasher;
-    private final SecretCipher secretCipher;
+    private final EmailVerificationIssuer verificationIssuer;
     private final OutboxPublisher outbox;
     private final UuidV7Generator ids;
     private final Clock clock;
@@ -68,23 +56,17 @@ public class RegistrationService {
 
     public RegistrationService(
             UserAccountRepository accounts,
-            OneTimeTokenRepository tokens,
             PasswordPolicy passwordPolicy,
             PasswordHasher passwordHasher,
-            SecureTokenGenerator tokenGenerator,
-            TokenHasher tokenHasher,
-            SecretCipher secretCipher,
+            EmailVerificationIssuer verificationIssuer,
             OutboxPublisher outbox,
             UuidV7Generator ids,
             Clock clock,
             PlatformTransactionManager transactionManager) {
         this.accounts = accounts;
-        this.tokens = tokens;
         this.passwordPolicy = passwordPolicy;
         this.passwordHasher = passwordHasher;
-        this.tokenGenerator = tokenGenerator;
-        this.tokenHasher = tokenHasher;
-        this.secretCipher = secretCipher;
+        this.verificationIssuer = verificationIssuer;
         this.outbox = outbox;
         this.ids = ids;
         this.clock = clock;
@@ -153,35 +135,15 @@ public class RegistrationService {
         UserAccount account = UserAccount.register(ids.next(), email, hash, locale, now);
         accounts.persist(account);
         accounts.flush();
-
-        String token = tokenGenerator.newOneTimeToken();
-        OneTimeToken verification = OneTimeToken.issue(
-                ids.next(),
-                account.id(),
-                OneTimeToken.Purpose.EMAIL_VERIFICATION,
-                TokenHash.of(tokenHasher.sha256(token)),
-                now);
-        tokens.persist(verification);
-
-        SealedSecret secret = secretCipher.seal(token, verification.expiresAt());
-        outbox.publish(
-                EmailVerificationRequested.TYPE,
-                null,
-                new EmailVerificationRequested(recipientOf(account), secret, verification.expiresAt()));
+        verificationIssuer.issueFor(account, now);
     }
 
     private void notifyHolder(UserAccount holder) {
         outbox.publish(
                 RegistrationAttemptedOnExistingAccount.TYPE,
                 null,
-                new RegistrationAttemptedOnExistingAccount(recipientOf(holder), clock.instant()));
-    }
-
-    private static Recipient recipientOf(UserAccount account) {
-        return new Recipient(
-                account.id(),
-                account.email().value(),
-                account.registrationLocale().tag());
+                new RegistrationAttemptedOnExistingAccount(
+                        EmailVerificationIssuer.recipientOf(holder), clock.instant()));
     }
 
     private static String reasonFor(InvalidPasswordException.Reason reason) {
