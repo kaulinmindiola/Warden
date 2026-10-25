@@ -1,5 +1,6 @@
 package io.github.kaulinmindiola.warden.shared.security;
 
+import io.github.kaulinmindiola.warden.shared.web.ApiWebConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -20,10 +21,16 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfiguration {
 
     /**
-     * Paths reachable without authentication. The actuator paths exist only on the management
-     * port, which is never published outside the deployment network.
+     * Paths reachable without authentication: the public endpoints of REQ-SEC-001 and the
+     * actuator paths, which exist only on the management port, never published outside the
+     * deployment network.
      */
-    static final String[] PUBLIC_PATHS = {"/actuator/health", "/actuator/health/**", "/actuator/prometheus"};
+    static final String[] PUBLIC_PATHS = {
+        "/actuator/health",
+        "/actuator/health/**",
+        "/actuator/prometheus",
+        ApiWebConfiguration.API_PREFIX + "/auth/register"
+    };
 
     @Bean
     SecurityFilterChain apiSecurityFilterChain(
