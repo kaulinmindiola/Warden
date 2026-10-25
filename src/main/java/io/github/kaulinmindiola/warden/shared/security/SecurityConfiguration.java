@@ -4,18 +4,24 @@ import io.github.kaulinmindiola.warden.shared.web.ApiWebConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.ProviderNotFoundException;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 
 /**
  * Stateless, deny-by-default security (REQ-SEC-001, SDD V11, V18).
  *
- * <p>Every request requires authentication except the public paths below. There is no session,
- * no CSRF protection (no cookies or ambient credentials are accepted), no form login and no HTTP
- * Basic. Authentication failures and access denials are rendered as problem details.
+ * <p>Every request requires a valid access token except the public paths below. The token is
+ * read only from the {@code Authorization: Bearer} header (REQ-INT-002) and validated by the
+ * {@link JwtDecoder} that the {@code iam} module provides. There is no session, no CSRF
+ * protection (no cookies or ambient credentials are accepted), no form login and no HTTP Basic.
+ * Authentication failures and access denials are rendered as problem details.
  */
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfiguration {
@@ -37,9 +43,17 @@ public class SecurityConfiguration {
     @Bean
     SecurityFilterChain apiSecurityFilterChain(
             HttpSecurity http,
+            JwtDecoder accessTokenDecoder,
             ProblemAuthenticationEntryPoint authenticationEntryPoint,
             ProblemAccessDeniedHandler accessDeniedHandler)
             throws Exception {
+        JwtAuthenticationProvider jwtProvider = new JwtAuthenticationProvider(accessTokenDecoder);
+        jwtProvider.setJwtAuthenticationConverter(new CurrentUserAuthenticationConverter());
+
+        DefaultBearerTokenResolver headerOnly = new DefaultBearerTokenResolver();
+        headerOnly.setAllowUriQueryParameter(false);
+        headerOnly.setAllowFormEncodedBodyParameter(false);
+
         http.csrf(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
                 .formLogin(AbstractHttpConfigurer::disable)
@@ -50,6 +64,11 @@ public class SecurityConfiguration {
                         .permitAll()
                         .anyRequest()
                         .authenticated())
+                .oauth2ResourceServer(resourceServer -> resourceServer
+                        .bearerTokenResolver(headerOnly)
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler)
+                        .jwt(jwt -> jwt.authenticationManager(new ProviderManager(jwtProvider))))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler));
