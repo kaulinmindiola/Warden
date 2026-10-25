@@ -83,7 +83,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Affects latency, memory (Argon2) and pinning risks.
 - **Affected elements:** V16, V23; REQ-PERF-001–005.
 - **Baseline direction:** Virtual threads on; semaphores for Argon2 and provider calls; Hikari as DB limiter.
-- **Status:** READY FOR ANALYSIS · **Phase:** 1
+- **Status:** ACCEPTED — [ADR-010](ADR-010-virtual-threads-bounded-resources.md) · **Phase:** 1
 
 ### ADR-011 — Protection of link tokens inside events and deliveries
 - **Description:** How one-time tokens travel to the notification module without existing in plaintext at rest.
@@ -132,7 +132,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Resolves the tension between REQ-MAINT-002 and REQ-FUNC-049/051 (locale changeable in preferences).
 - **Affected elements:** V02, V04, V10, V13; RISK-001; DEC-007, DEC-039.
 - **Baseline direction:** Events carry `Recipient{userId?, email, fallbackLocale}`; `notification` owns preferences and locale overrides; membership checks via `shared` `MembershipLookup`.
-- **Status:** PLANNED · **Phase:** 1
+- **Status:** ACCEPTED — [ADR-017](ADR-017-event-carried-recipient-data.md) · **Phase:** 1
 
 ### ADR-018 — Observability stack and trace correlation without a trace backend
 - **Description:** Metrics, logging format, tracing and alerting components of the reference environment.
