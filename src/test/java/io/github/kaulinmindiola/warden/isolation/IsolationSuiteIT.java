@@ -39,9 +39,12 @@ class IsolationSuiteIT extends IntegrationTest {
         WorkspaceFixture fixture =
                 WorkspaceFixture.create(new IamTestClient(context), JdbcClient.create(superuserDataSource()));
 
-        MvcResult randomId = fixture.perform(endpoint.requestFor(UUID.randomUUID()), fixture.outsiderToken());
-        MvcResult nonMember = fixture.perform(endpoint.requestFor(fixture.workspace()), fixture.outsiderToken());
-        MvcResult memberOfOther = fixture.perform(endpoint.requestFor(fixture.workspace()), fixture.otherMemberToken());
+        MvcResult randomId =
+                fixture.perform(endpoint.requestFor(fixture.target(UUID.randomUUID())), fixture.outsiderToken());
+        MvcResult nonMember =
+                fixture.perform(endpoint.requestFor(fixture.target(fixture.workspace())), fixture.outsiderToken());
+        MvcResult memberOfOther =
+                fixture.perform(endpoint.requestFor(fixture.target(fixture.workspace())), fixture.otherMemberToken());
 
         assertThat(randomId.getResponse().getStatus()).as("random workspace id").isEqualTo(404);
         assertThat((String) JsonPath.read(randomId.getResponse().getContentAsString(), "$.type"))

@@ -17,7 +17,8 @@ import org.springframework.web.context.WebApplicationContext;
 
 /**
  * Endpoint × role matrix (REQ-FUNC-024): for every registered endpoint, each role below the
- * minimum gets 403 {@code insufficient-role}, and the minimum and every higher role succeed.
+ * minimum gets 403 {@code insufficient-role}, and the minimum and every higher role succeed. Each
+ * call gets its own fresh target, so destructive endpoints succeed for every allowed role.
  */
 class RoleMatrixIT extends IntegrationTest {
 
@@ -38,7 +39,8 @@ class RoleMatrixIT extends IntegrationTest {
                 WorkspaceFixture.create(new IamTestClient(context), JdbcClient.create(superuserDataSource()));
 
         for (Role role : Role.values()) {
-            MvcResult result = fixture.perform(endpoint.requestFor(fixture.workspace()), fixture.tokenWithRole(role));
+            MvcResult result = fixture.perform(
+                    endpoint.requestFor(fixture.target(fixture.workspace())), fixture.tokenWithRole(role));
 
             if (role.isAtLeast(endpoint.minimumRole())) {
                 assertThat(result.getResponse().getStatus())
