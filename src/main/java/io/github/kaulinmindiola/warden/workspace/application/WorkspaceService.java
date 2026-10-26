@@ -7,6 +7,7 @@ import io.github.kaulinmindiola.warden.shared.audit.AuditEntry;
 import io.github.kaulinmindiola.warden.shared.audit.AuditLog;
 import io.github.kaulinmindiola.warden.shared.id.UuidV7Generator;
 import io.github.kaulinmindiola.warden.shared.security.Role;
+import io.github.kaulinmindiola.warden.shared.security.WorkspaceAccess;
 import io.github.kaulinmindiola.warden.shared.tenancy.TenantTransactions;
 import io.github.kaulinmindiola.warden.workspace.domain.InvalidWorkspaceNameException;
 import io.github.kaulinmindiola.warden.workspace.domain.Workspace;
@@ -20,25 +21,34 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
 /**
- * Creating a workspace (UC-10) and listing the caller's workspaces (UC-11).
+ * Workspaces and their members: creating (UC-10), listing the caller's workspaces (UC-11),
+ * reading one and listing its members (UC-15).
  *
- * <p>Both run in a transaction scoped to the caller, which Row Level Security on {@code
- * workspace_member} requires to read and insert the caller's own memberships (SDD V07).
+ * <p>Operations of the caller across workspaces run in a transaction scoped to the caller;
+ * operations on one workspace run in a transaction scoped to that workspace, where Row Level
+ * Security and the Hibernate filter apply (SDD V07). Authorization happens before, in the
+ * workspace authorization interceptor.
  */
 @Service
 public class WorkspaceService {
 
     static final String REQUIRED = "is required";
     static final String NAME_LENGTH = "must be between 1 and " + WorkspaceName.MAX_LENGTH + " characters";
+
+    private static final Sort MEMBERS_ORDER = Sort.by("joinedAt", "userId");
 
     private static final Logger log = LoggerFactory.getLogger(WorkspaceService.class);
 
@@ -107,12 +117,56 @@ public class WorkspaceService {
         });
     }
 
+    /**
+     * The workspace the caller was authorized for, with the caller's role.
+     *
+     * @throws WorkspaceNotFoundException if it was deleted after the authorization
+     */
+    public WorkspaceView get(WorkspaceAccess access) {
+        UUID workspaceId = access.workspaceId();
+        return tenantTransactions
+                .inWorkspace(workspaceId, () -> workspaces.findById(workspaceId).filter(found -> !found.isDeleted()))
+                .map(workspace ->
+                        new WorkspaceView(workspace.id(), workspace.name(), access.role(), workspace.createdAt()))
+                .orElseThrow(WorkspaceNotFoundException::new);
+    }
+
+    /**
+     * The members of a workspace with their e-mail and role, in joining order (REQ-FUNC-037). A
+     * membership with an unknown stored role or a missing account is left out and logged.
+     *
+     * @param pageable page number and size; its sort is replaced by the joining order
+     */
+    public Page<MemberView> listMembers(UUID workspaceId, Pageable pageable) {
+        PageRequest ordered = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), MEMBERS_ORDER);
+        Page<WorkspaceMember> page =
+                tenantTransactions.inWorkspace(workspaceId, () -> members.findByWorkspaceId(workspaceId, ordered));
+        Set<UUID> userIds =
+                page.getContent().stream().map(WorkspaceMember::userId).collect(Collectors.toSet());
+        Map<UUID, UserSummary> summaries = users.findByIds(userIds);
+        List<MemberView> views = page.getContent().stream()
+                .flatMap(member -> toView(member, summaries.get(member.userId())).stream())
+                .toList();
+        return new PageImpl<>(views, ordered, page.getTotalElements());
+    }
+
     private static Optional<WorkspaceView> toView(MemberWorkspaceRow row) {
         Optional<Role> role = Role.fromStored(row.role());
         if (role.isEmpty()) {
             log.error("Workspace {} has a membership with an unknown role; it is not listed", row.id());
         }
         return role.map(known -> new WorkspaceView(row.id(), row.name(), known, row.createdAt()));
+    }
+
+    private static Optional<MemberView> toView(WorkspaceMember member, UserSummary summary) {
+        Optional<Role> role = member.role();
+        if (role.isEmpty() || summary == null) {
+            log.error(
+                    "Workspace {} has a membership with an unknown role or account; it is not listed",
+                    member.workspaceId());
+            return Optional.empty();
+        }
+        return Optional.of(new MemberView(member.userId(), summary.email(), role.get(), member.joinedAt()));
     }
 
     private static WorkspaceName parseName(String rawName) {
