@@ -1,14 +1,15 @@
 package io.github.kaulinmindiola.warden.support;
 
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
 import io.github.kaulinmindiola.warden.shared.crypto.SealedSecret;
 import io.github.kaulinmindiola.warden.shared.crypto.SecretCipher;
 import io.github.kaulinmindiola.warden.shared.web.ApiWebConfiguration;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -19,13 +20,19 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Drives the IAM API through the full filter chain for integration tests: registers accounts,
- * logs in and reads the sealed one-time tokens that the outbox holds until notifications exist.
+ * logs in, calls authenticated endpoints and reads the sealed one-time tokens that the outbox
+ * holds until notifications exist.
+ *
+ * <p>Request builders are called through {@link MockMvcRequestBuilders} explicitly: this class
+ * declares its own {@code get} and {@code delete} methods, which would hide statically imported
+ * ones.
  */
 public final class IamTestClient {
 
@@ -60,12 +67,29 @@ public final class IamTestClient {
 
     /** Logs in with {@link #PASSWORD} and returns the access token. */
     public String login(String email) throws Exception {
-        String body = postJson(API + "/auth/login", Map.of("email", email, "password", PASSWORD), null)
+        return login(email, null);
+    }
+
+    /** Logs in with {@link #PASSWORD} and the given User-Agent, and returns the access token. */
+    public String login(String email, String userAgent) throws Exception {
+        MockHttpServletRequestBuilder request = MockMvcRequestBuilders.post(API + "/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(jsonMapper.writeValueAsString(Map.of("email", email, "password", PASSWORD)));
+        if (userAgent != null) {
+            request.header(HttpHeaders.USER_AGENT, userAgent);
+        }
+        String body = mvc.perform(request)
                 .andExpect(status().isOk())
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
         return JsonPath.read(body, "$.access_token");
+    }
+
+    /** The {@code sid} claim of an access token, read without validating it. */
+    public static UUID sessionIdOf(String accessToken) {
+        String payload = new String(Base64.getUrlDecoder().decode(accessToken.split("\\.")[1]), StandardCharsets.UTF_8);
+        return UUID.fromString(JsonPath.read(payload, "$.sid"));
     }
 
     public UUID userIdOf(String email) {
@@ -98,12 +122,26 @@ public final class IamTestClient {
      * the body are sent as JSON nulls.
      */
     public ResultActions postJson(String path, Map<String, ?> body, String accessToken) throws Exception {
-        MockHttpServletRequestBuilder request = post(path)
+        MockHttpServletRequestBuilder request = MockMvcRequestBuilders.post(path)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(jsonMapper.writeValueAsString(new HashMap<>(body)));
+        return mvc.perform(withBearer(request, accessToken));
+    }
+
+    /** Sends a GET, with a Bearer token when {@code accessToken} is not null. */
+    public ResultActions get(String path, String accessToken) throws Exception {
+        return mvc.perform(withBearer(MockMvcRequestBuilders.get(path), accessToken));
+    }
+
+    /** Sends a DELETE, with a Bearer token when {@code accessToken} is not null. */
+    public ResultActions delete(String path, String accessToken) throws Exception {
+        return mvc.perform(withBearer(MockMvcRequestBuilders.delete(path), accessToken));
+    }
+
+    private static MockHttpServletRequestBuilder withBearer(MockHttpServletRequestBuilder request, String accessToken) {
         if (accessToken != null) {
             request.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
         }
-        return mvc.perform(request);
+        return request;
     }
 }
