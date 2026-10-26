@@ -114,20 +114,12 @@ public final class IamTestClient {
 
     /** Opens the sealed token of the most recent verification event of the user. */
     public String latestVerificationToken(UUID userId) {
-        Map<String, Object> secret =
-                jdbc.sql("""
-                        SELECT payload -> 'secret' ->> 'ciphertext' AS ciphertext,
-                               payload -> 'secret' ->> 'keyId' AS key_id,
-                               payload -> 'secret' ->> 'expiresAt' AS expires_at
-                        FROM outbox_event
-                        WHERE type = 'iam.EmailVerificationRequested'
-                          AND payload -> 'recipient' ->> 'userId' = ?
-                        ORDER BY occurred_at DESC
-                        LIMIT 1
-                        """).param(userId.toString()).query().singleRow();
-        return secretCipher.open(new SealedSecret(
-                (String) secret.get("ciphertext"), (String) secret.get("key_id"), Instant.parse((String)
-                        secret.get("expires_at"))));
+        return latestSealedToken("iam.EmailVerificationRequested", userId);
+    }
+
+    /** Opens the sealed token of the most recent password reset event of the user. */
+    public String latestPasswordResetToken(UUID userId) {
+        return latestSealedToken("iam.PasswordResetRequested", userId);
     }
 
     /**
@@ -149,6 +141,23 @@ public final class IamTestClient {
     /** Sends a DELETE, with a Bearer token when {@code accessToken} is not null. */
     public ResultActions delete(String path, String accessToken) throws Exception {
         return mvc.perform(withBearer(MockMvcRequestBuilders.delete(path), accessToken));
+    }
+
+    private String latestSealedToken(String eventType, UUID userId) {
+        Map<String, Object> secret =
+                jdbc.sql("""
+                        SELECT payload -> 'secret' ->> 'ciphertext' AS ciphertext,
+                               payload -> 'secret' ->> 'keyId' AS key_id,
+                               payload -> 'secret' ->> 'expiresAt' AS expires_at
+                        FROM outbox_event
+                        WHERE type = ?
+                          AND payload -> 'recipient' ->> 'userId' = ?
+                        ORDER BY occurred_at DESC
+                        LIMIT 1
+                        """).param(eventType).param(userId.toString()).query().singleRow();
+        return secretCipher.open(new SealedSecret(
+                (String) secret.get("ciphertext"), (String) secret.get("key_id"), Instant.parse((String)
+                        secret.get("expires_at"))));
     }
 
     private static MockHttpServletRequestBuilder withBearer(MockHttpServletRequestBuilder request, String accessToken) {
