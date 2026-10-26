@@ -47,6 +47,9 @@
 		<palantir-java-format.version>2.102.0</palantir-java-format.version>
 		<jacoco.version>0.8.15</jacoco.version>
 
+		<!-- Minimum line coverage of the domain and application layers together (REQ-MAINT-004, FF-06) -->
+		<coverage.line.minimum>0.80</coverage.line.minimum>
+
 		<!-- Filled by the JaCoCo agent; empty default keeps @{argLine} valid when JaCoCo is skipped -->
 		<argLine/>
 	</properties>
@@ -340,7 +343,7 @@
 				</executions>
 			</plugin>
 
-			<!-- Coverage of unit and integration tests in a single data file; the 80 % gate arrives in step 1.25 -->
+			<!-- Coverage of unit and integration tests in a single data file, with the line coverage gate -->
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
@@ -367,6 +370,34 @@
 						<goals>
 							<goal>report</goal>
 						</goals>
+					</execution>
+					<!-- REQ-MAINT-004: fails the build when the line coverage of the domain and application
+					     layers, taken together, is below coverage.line.minimum. Runs that execute only some
+					     tests pass -Djacoco.haltOnFailure=false to get a warning instead. -->
+					<execution>
+						<id>coverage-gate</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>check</goal>
+						</goals>
+						<configuration>
+							<includes>
+								<include>io/github/kaulinmindiola/warden/*/domain/**</include>
+								<include>io/github/kaulinmindiola/warden/*/application/**</include>
+							</includes>
+							<rules>
+								<rule>
+									<element>BUNDLE</element>
+									<limits>
+										<limit>
+											<counter>LINE</counter>
+											<value>COVEREDRATIO</value>
+											<minimum>${coverage.line.minimum}</minimum>
+										</limit>
+									</limits>
+								</rule>
+							</rules>
+						</configuration>
 					</execution>
 				</executions>
 			</plugin>
