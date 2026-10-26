@@ -24,7 +24,7 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 
 /**
- * Builds the strict access-token decoder (REQ-SEC-002, SDD V18).
+ * Builds the strict access-token decoder (REQ-SEC-002, REQ-FUNC-018, SDD V18).
  *
  * <ul>
  *   <li>Only ES256 signatures made with the configured key are accepted; unsigned tokens, other
@@ -33,13 +33,15 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
  *       application clock.
  *   <li>{@code iss} must equal the configured issuer; {@code sub} and {@code sid} must be UUIDs;
  *       {@code jti}, {@code iat} and {@code exp} must be present.
+ *   <li>The session of {@code sid} must not be revoked.
  * </ul>
  */
 public final class AccessTokenDecoder {
 
     private AccessTokenDecoder() {}
 
-    public static JwtDecoder create(SigningKey signingKey, JwtProperties properties, Clock clock) {
+    public static JwtDecoder create(
+            SigningKey signingKey, JwtProperties properties, Clock clock, OAuth2TokenValidator<Jwt> sessionValidator) {
         ECKey verificationKey = new ECKey.Builder(Curve.P_256, signingKey.publicKey())
                 .keyID(signingKey.keyId())
                 .build();
@@ -60,7 +62,8 @@ public final class AccessTokenDecoder {
                 claim(CurrentUser.SESSION_CLAIM, AccessTokenDecoder::isUuid),
                 claim(JwtClaimNames.JTI, value -> value instanceof String jti && !jti.isBlank()),
                 claim(JwtClaimNames.IAT, Objects::nonNull),
-                claim(JwtClaimNames.EXP, Objects::nonNull)));
+                claim(JwtClaimNames.EXP, Objects::nonNull),
+                Objects.requireNonNull(sessionValidator, "sessionValidator")));
         return decoder;
     }
 
