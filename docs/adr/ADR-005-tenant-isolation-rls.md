@@ -1,9 +1,9 @@
 # ADR-005: Tenant isolation with an application filter and Row Level Security
 
-- Status: proposed
-- Date: 2026-10-25
+- Status: accepted
+- Date: 2026-10-26
 - Deciders: Kaulin Mindiola
-- Related: G-01, DEC-016, REQ-SEC-011, REQ-SEC-012, REQ-MAINT-003, REQ-POC-002; SDD V06, V07, V12
+- Related: G-01, DEC-016, MUC-01, RISK-009, REQ-FUNC-022, REQ-FUNC-023, REQ-FUNC-025, REQ-SEC-011, REQ-SEC-012, REQ-MAINT-003, REQ-POC-002; SDD V06, V07, V12; ADR-003, ADR-004
 
 ## Context and Problem Statement
 
@@ -29,16 +29,26 @@ application code is wrong, without the operational cost of separate schemas or d
 
 ## Decision Outcome
 
-Proposed option: **5, three layers** as described in SDD V07.
+Chosen option: **5, three layers**, as described in SDD V07.
 
 | Layer | Mechanism | Failure it covers |
 |-------|-----------|-------------------|
-| L1 — access resolution | Interceptor resolves the caller's membership of the route's workspace on every request, without caching | Non-member, deleted workspace, insufficient role |
-| L2 — application filter | Tenant transactions enable a Hibernate filter; repository methods take `workspaceId` explicitly | A query that loads another workspace's row by id |
+| L1 — access resolution | `WorkspaceAuthorizationInterceptor` resolves the caller's membership of the route's workspace through `MembershipLookup` on every request, without caching (ADR-003, ADR-004) | Non-member, deleted workspace, insufficient role |
+| L2 — application filter | `TenantTransactions.inWorkspace` opens the transaction and enables the Hibernate filter `tenant` on tenant-scoped entities; repository methods take `workspaceId` explicitly | A query that loads another workspace's row by id |
 | L3 — Row Level Security | The same transaction runs `set_config('app.workspace_id', :id, true)`; policies use `NULLIF(current_setting('app.workspace_id', true), '')::uuid`; tables use `FORCE ROW LEVEL SECURITY`; the runtime role owns nothing | A forgotten filter or a native query |
 
-Status stays `proposed` until layers 1 and 2 exist and the isolation suite and the raw JDBC
-RLS tests run against real tenant tables.
+Implementation rules:
+
+- The route variable of every workspace endpoint is `{workspaceId}`; workspace ids in request
+  bodies are never used as the tenant.
+- `TenantTransactions` refuses to run inside another transaction, so a tenant setting can never
+  leak into an outer transaction.
+- `TenantTransactions.forUser` sets `app.user_id` for operations across the caller's own
+  memberships; `workspace_member` uses the policy `member_visibility` (current tenant or own rows).
+- Policies of writable tenant tables have `WITH CHECK`, so a row cannot be written into another
+  workspace (for example `note_tenant`).
+- `TenantTransactions.system` sets `app.system_context` for background workers; its policies and
+  the rule that restricts its callers (R5) arrive with the notification workers in phase 4.
 
 ### Consequences
 
@@ -52,21 +62,32 @@ RLS tests run against real tenant tables.
 
 ### Confirmation
 
-Already confirmed (POC-002, `RlsConnectionPoolLeakIT`, layer 3):
+Layer 3 on its own:
 
-- 1 000 transactions alternating two tenants on a two-connection pool: zero cross reads, with
-  connection reuse between tenants proven.
-- A transaction without context on a reused connection sees no rows; the parameter reads as
-  `''`, which is why the policy uses `NULLIF`.
-- `JdbcClient` and JPA share the same connection and context in one transaction.
-- The owner sees nothing without context because of `FORCE`; only a superuser bypasses it.
-- `WITH CHECK` rejects writing another tenant's row (SQLSTATE `42501`).
+- POC-002 (`RlsConnectionPoolLeakIT`): 1 000 transactions alternating two tenants on a
+  two-connection pool, with zero cross reads and connection reuse proven; a reused connection
+  without context sees no rows, which is why policies use `NULLIF`.
+- `NoteRowLevelSecurityIT`: with raw JDBC as the application role and only `app.workspace_id`
+  set, rows of another workspace cannot be read, updated, deleted or inserted (`WITH CHECK`);
+  without context no row is visible or writable.
+- `WorkspaceIT`: memberships are invisible to the application role outside their context and
+  visible only to their own user.
 
-Pending before acceptance:
+Layers 2 and 3 when layer 1 lets the request through:
 
-- An isolation suite covering every `/workspaces/{id}/**` endpoint, enforced by a build-time
-  registry (REQ-MAINT-003).
-- Raw JDBC RLS tests on the real tenant tables without the application filter (REQ-SEC-012).
+- `NoteCrossWorkspaceIT`: a member of W and X cannot read, edit or delete a note of X through
+  W's route; the response equals that for an unknown note and the note of X stays intact.
+
+Layer 1 and its coverage:
+
+- `IsolationSuiteIT`: for every registered workspace endpoint, a non-member and the OWNER of
+  another workspace get the same 404 as a random id.
+- `WorkspaceEndpointRulesIT`: the build fails if a workspace handler is not in the isolation
+  registry (R7), uses another route variable, or lacks `@RequiresWorkspaceRole` (FF-05).
+- `TenantTransactionsIT`: each tenant transaction sets only its own context, enables the filter
+  only in a workspace, leaves nothing behind and refuses to nest.
+
+Pending, without blocking acceptance: the system context and rule R5 (phase 4).
 
 ## Pros and Cons of the Options
 

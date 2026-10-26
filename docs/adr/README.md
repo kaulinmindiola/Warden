@@ -48,7 +48,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** G-01 is the top driver; pooled-connection leakage is the main technical risk.
 - **Affected elements:** V06, V07, V12; REQ-SEC-012; REQ-POC-002; DEC-016.
 - **Baseline direction:** Three layers: route membership, Hibernate filter + explicit `workspaceId`, RLS with transaction-local GUCs and `NULLIF`.
-- **Status:** IN PROGRESS — [ADR-005](ADR-005-tenant-isolation-rls.md) proposed; accepted when layers 1 and 2 are verified · **Phase:** 0–2
+- **Status:** ACCEPTED — [ADR-005](ADR-005-tenant-isolation-rls.md) · **Phase:** 0–2
 
 ### ADR-006 — Atomic refresh-token rotation and reuse detection
 - **Description:** How to rotate refresh tokens so that concurrent use yields exactly one winner and reuse revokes the session.
