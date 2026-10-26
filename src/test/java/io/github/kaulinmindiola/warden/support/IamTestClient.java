@@ -68,6 +68,14 @@ public final class IamTestClient {
         return email;
     }
 
+    /** Registers a new account with {@link #PASSWORD}, verifies its e-mail and returns it. */
+    public String registerVerifiedAccount() throws Exception {
+        String email = registerNewAccount();
+        postJson(API + "/auth/email/verify", Map.of("token", latestVerificationToken(userIdOf(email))), null)
+                .andExpect(status().isNoContent());
+        return email;
+    }
+
     /** Logs in with {@link #PASSWORD} and returns the access token. */
     public String login(String email) throws Exception {
         return loginTokens(email, null).accessToken();
