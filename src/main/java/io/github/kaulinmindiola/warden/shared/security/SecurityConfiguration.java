@@ -1,6 +1,8 @@
 package io.github.kaulinmindiola.warden.shared.security;
 
 import io.github.kaulinmindiola.warden.shared.web.ApiWebConfiguration;
+import java.util.Set;
+import java.util.stream.Stream;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -11,6 +13,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationProvider;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -19,26 +22,30 @@ import org.springframework.security.web.SecurityFilterChain;
  *
  * <p>Every request requires a valid access token except the public paths below. The token is
  * read only from the {@code Authorization: Bearer} header (REQ-INT-002) and validated by the
- * {@link JwtDecoder} that the {@code iam} module provides. There is no session, no CSRF
- * protection (no cookies or ambient credentials are accepted), no form login and no HTTP Basic.
- * Authentication failures and access denials are rendered as problem details.
+ * {@link JwtDecoder} that the {@code iam} module provides. Public API endpoints ignore that header,
+ * so a stale access token never blocks login or refresh, and the refresh endpoint can reject a
+ * refresh token sent there. There is no session, no CSRF protection (no cookies or ambient
+ * credentials are accepted), no form login and no HTTP Basic. Authentication failures and access
+ * denials are rendered as problem details.
  */
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfiguration {
 
+    /** Public endpoints of REQ-SEC-001. They match exactly, so sub-paths stay protected. */
+    static final Set<String> PUBLIC_API_PATHS = Set.of(
+            ApiWebConfiguration.API_PREFIX + "/auth/register",
+            ApiWebConfiguration.API_PREFIX + "/auth/email/verify",
+            ApiWebConfiguration.API_PREFIX + "/auth/login",
+            ApiWebConfiguration.API_PREFIX + "/auth/refresh");
+
     /**
-     * Paths reachable without authentication: the public endpoints of REQ-SEC-001 and the
-     * actuator paths, which exist only on the management port, never published outside the
-     * deployment network. API paths match exactly, so sub-paths stay protected.
+     * Paths reachable without authentication: the public API endpoints and the actuator paths,
+     * which exist only on the management port, never published outside the deployment network.
      */
-    static final String[] PUBLIC_PATHS = {
-        "/actuator/health",
-        "/actuator/health/**",
-        "/actuator/prometheus",
-        ApiWebConfiguration.API_PREFIX + "/auth/register",
-        ApiWebConfiguration.API_PREFIX + "/auth/email/verify",
-        ApiWebConfiguration.API_PREFIX + "/auth/login"
-    };
+    static final String[] PUBLIC_PATHS = Stream.concat(
+                    Stream.of("/actuator/health", "/actuator/health/**", "/actuator/prometheus"),
+                    PUBLIC_API_PATHS.stream())
+            .toArray(String[]::new);
 
     @Bean
     SecurityFilterChain apiSecurityFilterChain(
@@ -53,6 +60,8 @@ public class SecurityConfiguration {
         DefaultBearerTokenResolver headerOnly = new DefaultBearerTokenResolver();
         headerOnly.setAllowUriQueryParameter(false);
         headerOnly.setAllowFormEncodedBodyParameter(false);
+        BearerTokenResolver ignoredOnPublicEndpoints =
+                request -> PUBLIC_API_PATHS.contains(request.getRequestURI()) ? null : headerOnly.resolve(request);
 
         http.csrf(AbstractHttpConfigurer::disable)
                 .httpBasic(AbstractHttpConfigurer::disable)
@@ -65,7 +74,7 @@ public class SecurityConfiguration {
                         .anyRequest()
                         .authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer
-                        .bearerTokenResolver(headerOnly)
+                        .bearerTokenResolver(ignoredOnPublicEndpoints)
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler)
                         .jwt(jwt -> jwt.authenticationManager(new ProviderManager(jwtProvider))))

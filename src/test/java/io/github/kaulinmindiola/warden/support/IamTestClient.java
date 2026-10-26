@@ -39,6 +39,9 @@ public final class IamTestClient {
     public static final String API = ApiWebConfiguration.API_PREFIX;
     public static final String PASSWORD = "correct horse battery staple";
 
+    /** The tokens of a login or refresh response. */
+    public record Tokens(String accessToken, String refreshToken) {}
+
     private final MockMvc mvc;
     private final JsonMapper jsonMapper;
     private final JdbcClient jdbc;
@@ -67,11 +70,21 @@ public final class IamTestClient {
 
     /** Logs in with {@link #PASSWORD} and returns the access token. */
     public String login(String email) throws Exception {
-        return login(email, null);
+        return loginTokens(email, null).accessToken();
     }
 
     /** Logs in with {@link #PASSWORD} and the given User-Agent, and returns the access token. */
     public String login(String email, String userAgent) throws Exception {
+        return loginTokens(email, userAgent).accessToken();
+    }
+
+    /** Logs in with {@link #PASSWORD} and returns both tokens. */
+    public Tokens loginTokens(String email) throws Exception {
+        return loginTokens(email, null);
+    }
+
+    /** Logs in with {@link #PASSWORD} and the given User-Agent, and returns both tokens. */
+    public Tokens loginTokens(String email, String userAgent) throws Exception {
         MockHttpServletRequestBuilder request = MockMvcRequestBuilders.post(API + "/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(jsonMapper.writeValueAsString(Map.of("email", email, "password", PASSWORD)));
@@ -83,7 +96,7 @@ public final class IamTestClient {
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        return JsonPath.read(body, "$.access_token");
+        return new Tokens(JsonPath.read(body, "$.access_token"), JsonPath.read(body, "$.refresh_token"));
     }
 
     /** The {@code sid} claim of an access token, read without validating it. */
