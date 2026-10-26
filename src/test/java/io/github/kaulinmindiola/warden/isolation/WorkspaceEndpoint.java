@@ -13,15 +13,26 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * @param pattern path pattern exactly as the handler mapping reports it, prefix included
  * @param minimumRole the role the handler declares with {@code @RequiresWorkspaceRole}
  * @param successStatus status of a successful call by an authorized member
- * @param request builds a valid request for a workspace; the caller adds the token
+ * @param request builds a valid request against a target; the caller adds the token
  */
 public record WorkspaceEndpoint(
         HttpMethod method, String pattern, Role minimumRole, int successStatus, RequestFactory request) {
 
-    /** Builds a request against the given workspace. */
+    /**
+     * What a request is aimed at. For a workspace that exists, {@link #newNote()} creates a fresh
+     * note in it; for a random workspace id it returns a random id.
+     */
+    public interface Target {
+
+        UUID workspaceId();
+
+        UUID newNote();
+    }
+
+    /** Builds a request against a target. */
     @FunctionalInterface
     public interface RequestFactory {
-        MockHttpServletRequestBuilder build(UUID workspaceId);
+        MockHttpServletRequestBuilder build(Target target);
     }
 
     public WorkspaceEndpoint {
@@ -36,8 +47,8 @@ public record WorkspaceEndpoint(
         return method.name() + " " + pattern;
     }
 
-    public MockHttpServletRequestBuilder requestFor(UUID workspaceId) {
-        return request.build(workspaceId);
+    public MockHttpServletRequestBuilder requestFor(Target target) {
+        return request.build(target);
     }
 
     /** Names parameterized test cases. */

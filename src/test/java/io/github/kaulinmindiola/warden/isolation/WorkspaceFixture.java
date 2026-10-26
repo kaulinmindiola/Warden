@@ -15,31 +15,56 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /**
  * The workspace under test, another workspace, and the callers of the isolation suite and the role
- * matrix. Memberships are seeded as the superuser, which bypasses Row Level Security; the
- * endpoints that add members arrive in later steps.
+ * matrix. Memberships and notes are seeded as the superuser, which bypasses Row Level Security;
+ * the endpoints that add members arrive in later steps.
  *
+ * @param ownerId the OWNER of both workspaces and author of seeded notes
  * @param workspace the workspace the requests target
- * @param otherWorkspace a workspace the caller of {@code otherMemberToken} owns
+ * @param otherWorkspace a second workspace of the same owner
  * @param outsiderToken a user who belongs to no workspace
- * @param otherMemberToken the OWNER of the other workspace, not a member of {@code workspace}
+ * @param otherMemberToken an OWNER of the other workspace, not a member of {@code workspace}
  */
 record WorkspaceFixture(
         IamTestClient iam,
         JdbcClient superuser,
+        UUID ownerId,
         UUID workspace,
         UUID otherWorkspace,
         String outsiderToken,
         String otherMemberToken) {
 
     static WorkspaceFixture create(IamTestClient iam, JdbcClient superuser) throws Exception {
-        String ownerToken = iam.login(iam.registerVerifiedAccount());
+        String ownerEmail = iam.registerVerifiedAccount();
+        String ownerToken = iam.login(ownerEmail);
         UUID workspace = createWorkspace(iam, ownerToken, "Isolated");
         UUID otherWorkspace = createWorkspace(iam, ownerToken, "Other");
         String outsiderToken = iam.login(iam.registerNewAccount());
         String otherMemberEmail = iam.registerNewAccount();
         addMember(superuser, otherWorkspace, iam.userIdOf(otherMemberEmail), Role.OWNER);
         return new WorkspaceFixture(
-                iam, superuser, workspace, otherWorkspace, outsiderToken, iam.login(otherMemberEmail));
+                iam,
+                superuser,
+                iam.userIdOf(ownerEmail),
+                workspace,
+                otherWorkspace,
+                outsiderToken,
+                iam.login(otherMemberEmail));
+    }
+
+    /** A target in the given workspace; notes are seeded only in the fixture's workspaces. */
+    WorkspaceEndpoint.Target target(UUID workspaceId) {
+        boolean known = workspaceId.equals(workspace) || workspaceId.equals(otherWorkspace);
+        return new WorkspaceEndpoint.Target() {
+            @Override
+            public UUID workspaceId() {
+                return workspaceId;
+            }
+
+            @Override
+            public UUID newNote() {
+                return known ? seedNote(workspaceId) : UUID.randomUUID();
+            }
+        };
     }
 
     /** A new user with the given role in {@link #workspace()}, logged in. */
@@ -53,6 +78,15 @@ record WorkspaceFixture(
         return iam.mvc()
                 .perform(request.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andReturn();
+    }
+
+    private UUID seedNote(UUID workspaceId) {
+        UUID noteId = UUID.randomUUID();
+        superuser.sql("""
+                        INSERT INTO note (id, workspace_id, title, body, author_id, version, created_at, updated_at)
+                        VALUES (?, ?, 'Seeded', 'Body', ?, 0, now(), now())
+                        """).param(noteId).param(workspaceId).param(ownerId).update();
+        return noteId;
     }
 
     private static UUID createWorkspace(IamTestClient iam, String accessToken, String name) throws Exception {
