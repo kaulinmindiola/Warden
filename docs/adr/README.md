@@ -55,7 +55,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Normative guarantee (REQ-FUNC-013) and a classic correctness trap; RISK-008.
 - **Affected elements:** V11, V14-A1, V15, V16.
 - **Baseline direction:** Conditional `UPDATE … WHERE used_at IS NULL RETURNING`; conditional session revoke for a single alert.
-- **Status:** READY FOR ANALYSIS · **Phase:** 1
+- **Status:** ACCEPTED — [ADR-006](ADR-006-refresh-token-rotation.md) · **Phase:** 1
 
 ### ADR-007 — Revocation denylist in Redis with PostgreSQL fallback and reconciliation
 - **Description:** How to reject revoked sessions immediately while tolerating Redis failures.
