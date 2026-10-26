@@ -24,6 +24,9 @@ public interface AuthSessionRepository extends Repository<AuthSession, UUID>, Pe
     /** Whether the session exists and belongs to the user, revoked or not. */
     boolean existsByIdAndUserId(UUID id, UUID userId);
 
+    /** Whether the session exists and is not revoked; the fallback when Redis cannot answer. */
+    boolean existsByIdAndRevokedAtIsNull(UUID id);
+
     /**
      * Revokes the session if it belongs to the user and is not revoked yet. When several requests
      * revoke the same session at once, only one of them changes the row.

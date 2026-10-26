@@ -1,6 +1,7 @@
 package io.github.kaulinmindiola.warden.iam.application;
 
 import io.github.kaulinmindiola.warden.iam.domain.AuthSession;
+import io.github.kaulinmindiola.warden.iam.domain.RevocationStore;
 import io.github.kaulinmindiola.warden.iam.infrastructure.AuthSessionRepository;
 import io.github.kaulinmindiola.warden.shared.audit.AuditAction;
 import io.github.kaulinmindiola.warden.shared.audit.AuditEntry;
@@ -18,22 +19,28 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The user's own sessions: listing (UC-06), terminating one (UC-07) and logging out (UC-05).
- * Revocations are conditional, so each one is audited exactly once.
+ *
+ * <p>Revocations are conditional, so each one is audited exactly once. After the commit and
+ * before returning, the session is marked in the revocation store, so the very next request with
+ * one of its tokens is rejected (REQ-FUNC-018).
  */
 @Service
 public class SessionService {
 
     private final AuthSessionRepository sessions;
+    private final RevocationStore revocationStore;
     private final AuditLog auditLog;
     private final Clock clock;
     private final TransactionTemplate transactions;
 
     public SessionService(
             AuthSessionRepository sessions,
+            RevocationStore revocationStore,
             AuditLog auditLog,
             Clock clock,
             PlatformTransactionManager transactionManager) {
         this.sessions = sessions;
+        this.revocationStore = revocationStore;
         this.auditLog = auditLog;
         this.clock = clock;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -64,12 +71,14 @@ public class SessionService {
                 throw new SessionNotFoundException();
             }
         });
+        revocationStore.markRevoked(sessionId);
     }
 
     /** Revokes the session the request was made with (REQ-FUNC-015). Never fails if already revoked. */
     public void logout(CurrentUser user) {
         transactions.executeWithoutResult(
                 status -> revoke(user, user.sessionId(), AuthSession.RevokeReason.LOGOUT, AuditAction.LOGOUT));
+        revocationStore.markRevoked(user.sessionId());
     }
 
     /** @return whether this call revoked the session */
