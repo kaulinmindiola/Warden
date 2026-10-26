@@ -23,10 +23,10 @@ import org.springframework.security.web.SecurityFilterChain;
  * <p>Every request requires a valid access token except the public paths below. The token is
  * read only from the {@code Authorization: Bearer} header (REQ-INT-002) and validated by the
  * {@link JwtDecoder} that the {@code iam} module provides. Public API endpoints ignore that header,
- * so a stale access token never blocks login or refresh, and the refresh endpoint can reject a
- * refresh token sent there. There is no session, no CSRF protection (no cookies or ambient
- * credentials are accepted), no form login and no HTTP Basic. Authentication failures and access
- * denials are rendered as problem details.
+ * so a stale access token never blocks login, refresh or password recovery, and the refresh
+ * endpoint can reject a refresh token sent there. There is no session, no CSRF protection (no
+ * cookies or ambient credentials are accepted), no form login and no HTTP Basic. Authentication
+ * failures and access denials are rendered as problem details.
  */
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfiguration {
@@ -36,7 +36,9 @@ public class SecurityConfiguration {
             ApiWebConfiguration.API_PREFIX + "/auth/register",
             ApiWebConfiguration.API_PREFIX + "/auth/email/verify",
             ApiWebConfiguration.API_PREFIX + "/auth/login",
-            ApiWebConfiguration.API_PREFIX + "/auth/refresh");
+            ApiWebConfiguration.API_PREFIX + "/auth/refresh",
+            ApiWebConfiguration.API_PREFIX + "/auth/password/forgot",
+            ApiWebConfiguration.API_PREFIX + "/auth/password/reset");
 
     /**
      * Paths reachable without authentication: the public API endpoints and the actuator paths,
