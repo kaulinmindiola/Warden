@@ -1,6 +1,9 @@
 package io.github.kaulinmindiola.warden.workspace.web;
 
 import io.github.kaulinmindiola.warden.shared.security.CurrentUser;
+import io.github.kaulinmindiola.warden.shared.security.RequiresWorkspaceRole;
+import io.github.kaulinmindiola.warden.shared.security.Role;
+import io.github.kaulinmindiola.warden.shared.security.WorkspaceAccess;
 import io.github.kaulinmindiola.warden.shared.web.FieldViolation;
 import io.github.kaulinmindiola.warden.shared.web.PageQuery;
 import io.github.kaulinmindiola.warden.shared.web.PageResponse;
@@ -8,15 +11,19 @@ import io.github.kaulinmindiola.warden.shared.web.ProblemException;
 import io.github.kaulinmindiola.warden.shared.web.ProblemType;
 import io.github.kaulinmindiola.warden.workspace.application.EmailNotVerifiedException;
 import io.github.kaulinmindiola.warden.workspace.application.InvalidWorkspaceException;
+import io.github.kaulinmindiola.warden.workspace.application.WorkspaceNotFoundException;
 import io.github.kaulinmindiola.warden.workspace.application.WorkspaceService;
 import io.github.kaulinmindiola.warden.workspace.application.WorkspaceView;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -62,5 +69,18 @@ class WorkspaceController {
     @GetMapping
     PageResponse<WorkspaceResponse> list(@AuthenticationPrincipal CurrentUser user, @Valid PageQuery query) {
         return PageResponse.from(workspaceService.listMine(user.userId(), query.toPageable()), WorkspaceResponse::from);
+    }
+
+    /** One workspace of the caller, the target of the {@code Location} of a creation. */
+    @GetMapping("/{workspaceId}")
+    @RequiresWorkspaceRole(Role.VIEWER)
+    WorkspaceResponse get(
+            @PathVariable UUID workspaceId,
+            @RequestAttribute(WorkspaceAccess.REQUEST_ATTRIBUTE) WorkspaceAccess access) {
+        try {
+            return WorkspaceResponse.from(workspaceService.get(access));
+        } catch (WorkspaceNotFoundException deleted) {
+            throw new ProblemException(ProblemType.NOT_FOUND);
+        }
     }
 }
