@@ -24,10 +24,12 @@ public final class IsolationRegistry {
     public static final String WORKSPACE_SCOPED_PREFIX = ApiWebConfiguration.API_PREFIX + "/workspaces/{";
 
     private static final String MEMBERS = WORKSPACE_ROUTE + "/members";
+    private static final String MEMBER_ROLE = MEMBERS + "/{userId}/role";
     private static final String NOTES = WORKSPACE_ROUTE + "/notes";
     private static final String NOTE = NOTES + "/{noteId}";
     private static final String NEW_NOTE = "{\"title\":\"Registry note\",\"body\":\"Body\"}";
     private static final String EDITED_NOTE = "{\"title\":\"Edited\",\"body\":\"Body\",\"version\":0}";
+    private static final String DEMOTE_TO_VIEWER = "{\"role\":\"VIEWER\"}";
 
     public static final List<WorkspaceEndpoint> ENDPOINTS = List.of(
             new WorkspaceEndpoint(
@@ -42,6 +44,14 @@ public final class IsolationRegistry {
                     Role.VIEWER,
                     200,
                     target -> MockMvcRequestBuilders.get(MEMBERS, target.workspaceId())),
+            new WorkspaceEndpoint(
+                    HttpMethod.PUT,
+                    MEMBER_ROLE,
+                    Role.ADMIN,
+                    200,
+                    target -> MockMvcRequestBuilders.put(MEMBER_ROLE, target.workspaceId(), target.newMember())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(DEMOTE_TO_VIEWER)),
             new WorkspaceEndpoint(
                     HttpMethod.GET,
                     NOTES,

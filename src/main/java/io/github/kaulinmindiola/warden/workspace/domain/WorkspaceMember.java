@@ -57,6 +57,14 @@ public class WorkspaceMember {
         return new WorkspaceMember(workspaceId, userId, role, now.truncatedTo(ChronoUnit.MICROS));
     }
 
+    /**
+     * Replaces the role. Authority rules and the last-OWNER guard are enforced by the caller, which
+     * holds the workspace lock (SDD V14-A4).
+     */
+    public void changeRole(Role newRole) {
+        this.role = Objects.requireNonNull(newRole, "newRole").name();
+    }
+
     public UUID workspaceId() {
         return workspaceId;
     }

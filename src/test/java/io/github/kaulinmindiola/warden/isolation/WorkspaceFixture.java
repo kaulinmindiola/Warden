@@ -51,7 +51,7 @@ record WorkspaceFixture(
                 iam.login(otherMemberEmail));
     }
 
-    /** A target in the given workspace; notes are seeded only in the fixture's workspaces. */
+    /** A target in the given workspace; resources are seeded only in the fixture's workspaces. */
     WorkspaceEndpoint.Target target(UUID workspaceId) {
         boolean known = workspaceId.equals(workspace) || workspaceId.equals(otherWorkspace);
         return new WorkspaceEndpoint.Target() {
@@ -63,6 +63,11 @@ record WorkspaceFixture(
             @Override
             public UUID newNote() {
                 return known ? seedNote(workspaceId) : UUID.randomUUID();
+            }
+
+            @Override
+            public UUID newMember() {
+                return known ? seedMember(workspaceId) : UUID.randomUUID();
             }
         };
     }
@@ -87,6 +92,16 @@ record WorkspaceFixture(
                         VALUES (?, ?, 'Seeded', 'Body', ?, 0, now(), now())
                         """).param(noteId).param(workspaceId).param(ownerId).update();
         return noteId;
+    }
+
+    private UUID seedMember(UUID workspaceId) {
+        try {
+            UUID userId = iam.userIdOf(iam.registerNewAccount());
+            addMember(superuser, workspaceId, userId, Role.MEMBER);
+            return userId;
+        } catch (Exception failure) {
+            throw new IllegalStateException("Could not seed a member", failure);
+        }
     }
 
     private static UUID createWorkspace(IamTestClient iam, String accessToken, String name) throws Exception {
