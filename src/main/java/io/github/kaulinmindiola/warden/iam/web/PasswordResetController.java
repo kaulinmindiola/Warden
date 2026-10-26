@@ -3,6 +3,7 @@ package io.github.kaulinmindiola.warden.iam.web;
 import io.github.kaulinmindiola.warden.iam.application.InvalidPasswordResetException;
 import io.github.kaulinmindiola.warden.iam.application.PasswordResetService;
 import io.github.kaulinmindiola.warden.iam.domain.InvalidOneTimeTokenException;
+import io.github.kaulinmindiola.warden.shared.security.ResponseFloor;
 import io.github.kaulinmindiola.warden.shared.web.FieldViolation;
 import io.github.kaulinmindiola.warden.shared.web.ProblemException;
 import io.github.kaulinmindiola.warden.shared.web.ProblemType;
@@ -19,19 +20,22 @@ import org.springframework.web.bind.annotation.RestController;
 class PasswordResetController {
 
     private final PasswordResetService passwordResetService;
+    private final ResponseFloor responseFloor;
 
-    PasswordResetController(PasswordResetService passwordResetService) {
+    PasswordResetController(PasswordResetService passwordResetService, ResponseFloor responseFloor) {
         this.passwordResetService = passwordResetService;
+        this.responseFloor = responseFloor;
     }
 
     /**
      * Requests a reset link. Responds 202 with no body whether or not the e-mail has an account
      * (REQ-FUNC-019), and 400 {@code validation-error} if the e-mail is missing or malformed.
+     * Every outcome takes at least the response floor (REQ-SEC-010, ADR-019).
      */
     @PostMapping("/forgot")
     ResponseEntity<Void> forgot(@RequestBody ForgotPasswordRequest request) {
         try {
-            passwordResetService.requestReset(request.email());
+            responseFloor.run(() -> passwordResetService.requestReset(request.email()));
         } catch (InvalidPasswordResetException invalid) {
             throw validationError(invalid);
         }
