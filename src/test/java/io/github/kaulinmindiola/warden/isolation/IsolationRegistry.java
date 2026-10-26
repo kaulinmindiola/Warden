@@ -23,8 +23,10 @@ public final class IsolationRegistry {
     /** Any route below {@code /workspaces/} with a path variable is workspace-scoped. */
     public static final String WORKSPACE_SCOPED_PREFIX = ApiWebConfiguration.API_PREFIX + "/workspaces/{";
 
+    private static final String LEAVE = WORKSPACE_ROUTE + "/leave";
     private static final String MEMBERS = WORKSPACE_ROUTE + "/members";
-    private static final String MEMBER_ROLE = MEMBERS + "/{userId}/role";
+    private static final String MEMBER = MEMBERS + "/{userId}";
+    private static final String MEMBER_ROLE = MEMBER + "/role";
     private static final String NOTES = WORKSPACE_ROUTE + "/notes";
     private static final String NOTE = NOTES + "/{noteId}";
     private static final String NEW_NOTE = "{\"title\":\"Registry note\",\"body\":\"Body\"}";
@@ -39,6 +41,12 @@ public final class IsolationRegistry {
                     200,
                     target -> MockMvcRequestBuilders.get(WORKSPACE_ROUTE, target.workspaceId())),
             new WorkspaceEndpoint(
+                    HttpMethod.POST,
+                    LEAVE,
+                    Role.VIEWER,
+                    204,
+                    target -> MockMvcRequestBuilders.post(LEAVE, target.workspaceId())),
+            new WorkspaceEndpoint(
                     HttpMethod.GET,
                     MEMBERS,
                     Role.VIEWER,
@@ -52,6 +60,12 @@ public final class IsolationRegistry {
                     target -> MockMvcRequestBuilders.put(MEMBER_ROLE, target.workspaceId(), target.newMember())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(DEMOTE_TO_VIEWER)),
+            new WorkspaceEndpoint(
+                    HttpMethod.DELETE,
+                    MEMBER,
+                    Role.ADMIN,
+                    204,
+                    target -> MockMvcRequestBuilders.delete(MEMBER, target.workspaceId(), target.newMember())),
             new WorkspaceEndpoint(
                     HttpMethod.GET,
                     NOTES,
