@@ -19,14 +19,18 @@ public record WorkspaceEndpoint(
         HttpMethod method, String pattern, Role minimumRole, int successStatus, RequestFactory request) {
 
     /**
-     * What a request is aimed at. For a workspace that exists, {@link #newNote()} creates a fresh
-     * note in it; for a random workspace id it returns a random id.
+     * What a request is aimed at. For a workspace that exists, {@link #newNote()} and {@link
+     * #newMember()} create a fresh resource in it; for a random workspace id they return random ids.
      */
     public interface Target {
 
         UUID workspaceId();
 
+        /** A new note in the workspace. */
         UUID newNote();
+
+        /** A new user who is a MEMBER of the workspace. */
+        UUID newMember();
     }
 
     /** Builds a request against a target. */

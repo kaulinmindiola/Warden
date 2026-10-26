@@ -57,4 +57,13 @@ public interface WorkspaceMemberRepository
 
     /** The members of a workspace. Needs a transaction scoped to the workspace. */
     Page<WorkspaceMember> findByWorkspaceId(UUID workspaceId, Pageable pageable);
+
+    /** One membership of a workspace. Needs a transaction scoped to the workspace. */
+    Optional<WorkspaceMember> findByWorkspaceIdAndUserId(UUID workspaceId, UUID userId);
+
+    /** Members of a workspace with a stored role, in joining order. Needs a workspace transaction. */
+    List<WorkspaceMember> findByWorkspaceIdAndRoleOrderByJoinedAtAscUserIdAsc(UUID workspaceId, String role);
+
+    /** How many members of a workspace have a stored role. Needs a workspace transaction. */
+    long countByWorkspaceIdAndRole(UUID workspaceId, String role);
 }
