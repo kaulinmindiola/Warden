@@ -4,3 +4,7 @@
 warden:
   keys:
     allow-ephemeral: true
+  # No minimum response time, so registering accounts in every test stays fast.
+  # ResponseFloorIT sets its own value and verifies the floor (ADR-019).
+  security:
+    response-floor: 0ms
