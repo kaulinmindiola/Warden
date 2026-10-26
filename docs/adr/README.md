@@ -146,7 +146,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** REQ-SEC-010 is measured statistically; the mechanism affects latency targets.
 - **Affected elements:** V11, V14-A2/A3; REQ-SEC-010; REQ-PERF-001; BR-007.
 - **Baseline direction:** Dummy Argon2 hash for unknown e-mails; configurable minimum response time for register and forgot-password.
-- **Status:** PLANNED · **Phase:** 1 (mechanism) / 3 (calibration)
+- **Status:** ACCEPTED — [ADR-019](ADR-019-response-time-equalization.md) · **Phase:** 1 (mechanism) / 3 (calibration)
 
 ### ADR-020 — Redis distribution and licence under CON-007
 - **Description:** Which Redis-compatible server satisfies "Redis" (CON-004) and "open-source only" (CON-007).
