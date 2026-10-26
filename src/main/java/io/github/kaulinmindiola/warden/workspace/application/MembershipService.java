@@ -22,10 +22,11 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 /**
- * Changes to the members of a workspace (UC-16), following SDD V14-A4: every operation runs in
- * the workspace's tenant transaction and starts by locking the workspace row, so operations on
- * the members of one workspace are serialized and the last-OWNER guard cannot be raced (BR-001).
- * The actor's role is read again under the lock, never taken from earlier in the request.
+ * Changes to the members of a workspace (UC-16 to UC-18), following SDD V14-A4: every operation
+ * runs in the workspace's tenant transaction and starts by locking the workspace row, so
+ * operations on the members of one workspace are serialized and the last-OWNER guard cannot be
+ * raced (BR-001, BR-011). The actor's role is read again under the lock, never taken from earlier
+ * in the request.
  */
 @Service
 public class MembershipService {
@@ -69,21 +70,16 @@ public class MembershipService {
     public MemberView changeRole(UUID workspaceId, UUID actorId, UUID targetId, String rawRole) {
         Role newRole = parseRole(rawRole);
         return tenantTransactions.inWorkspace(workspaceId, () -> {
-            Workspace workspace =
-                    workspaces.findByIdAndDeletedAtIsNull(workspaceId).orElseThrow(WorkspaceNotFoundException::new);
-            Role actorRole = members.findByWorkspaceIdAndUserId(workspaceId, actorId)
-                    .flatMap(WorkspaceMember::role)
-                    .filter(role -> role.isAtLeast(Role.ADMIN))
-                    .orElseThrow(InsufficientAuthorityException::new);
-            WorkspaceMember target =
-                    members.findByWorkspaceIdAndUserId(workspaceId, targetId).orElseThrow(MemberNotFoundException::new);
+            Workspace workspace = lockWorkspace(workspaceId);
+            Role actorRole = adminRoleOf(workspaceId, actorId);
+            WorkspaceMember target = memberOf(workspaceId, targetId);
             Role previousRole = target.role().orElseThrow(MemberNotFoundException::new);
 
             if (actorRole == Role.ADMIN && (previousRole == Role.OWNER || newRole == Role.OWNER)) {
                 throw new InsufficientAuthorityException();
             }
-            if (previousRole == Role.OWNER && newRole != Role.OWNER && ownerCount(workspaceId) <= 1) {
-                throw new LastOwnerException();
+            if (previousRole == Role.OWNER && newRole != Role.OWNER) {
+                requireAnotherOwner(workspaceId);
             }
             if (previousRole == newRole) {
                 UserSummary unchanged = users.findById(targetId).orElseThrow(MemberNotFoundException::new);
@@ -123,8 +119,80 @@ public class MembershipService {
         });
     }
 
-    private long ownerCount(UUID workspaceId) {
-        return members.countByWorkspaceIdAndRole(workspaceId, Role.OWNER.name());
+    /**
+     * Removes a member (REQ-FUNC-041). An OWNER may remove anyone; an ADMIN only members who are
+     * not OWNERs (BR-002). The member's notes are kept.
+     *
+     * @throws WorkspaceNotFoundException if the workspace no longer exists
+     * @throws InsufficientAuthorityException if the actor may not remove this member
+     * @throws MemberNotFoundException if the target is not a member of this workspace
+     * @throws LastOwnerException if the target is the last OWNER
+     */
+    public void removeMember(UUID workspaceId, UUID actorId, UUID targetId) {
+        tenantTransactions.inWorkspace(workspaceId, () -> {
+            lockWorkspace(workspaceId);
+            Role actorRole = adminRoleOf(workspaceId, actorId);
+            Role targetRole = memberOf(workspaceId, targetId).role().orElseThrow(MemberNotFoundException::new);
+
+            if (actorRole == Role.ADMIN && targetRole == Role.OWNER) {
+                throw new InsufficientAuthorityException();
+            }
+            if (targetRole == Role.OWNER) {
+                requireAnotherOwner(workspaceId);
+            }
+            members.deleteMembership(workspaceId, targetId);
+            auditLog.recordSuccess(new AuditEntry(
+                    AuditAction.MEMBER_REMOVED,
+                    actorId,
+                    workspaceId,
+                    Map.of("targetUserId", targetId.toString(), "role", targetRole.name())));
+            return null;
+        });
+    }
+
+    /**
+     * The caller leaves the workspace (REQ-FUNC-042). Their notes are kept.
+     *
+     * @throws WorkspaceNotFoundException if the workspace no longer exists
+     * @throws MemberNotFoundException if the caller is no longer a member
+     * @throws LastOwnerException if the caller is the last OWNER
+     */
+    public void leave(UUID workspaceId, UUID userId) {
+        tenantTransactions.inWorkspace(workspaceId, () -> {
+            lockWorkspace(workspaceId);
+            Role role = memberOf(workspaceId, userId).role().orElseThrow(MemberNotFoundException::new);
+            if (role == Role.OWNER) {
+                requireAnotherOwner(workspaceId);
+            }
+            members.deleteMembership(workspaceId, userId);
+            auditLog.recordSuccess(
+                    new AuditEntry(AuditAction.MEMBER_LEFT, userId, workspaceId, Map.of("role", role.name())));
+            return null;
+        });
+    }
+
+    /** Locks the workspace row until the end of the transaction (SDD V14-A4). */
+    private Workspace lockWorkspace(UUID workspaceId) {
+        return workspaces.findByIdAndDeletedAtIsNull(workspaceId).orElseThrow(WorkspaceNotFoundException::new);
+    }
+
+    /** The actor's current role, which must be ADMIN or OWNER. */
+    private Role adminRoleOf(UUID workspaceId, UUID actorId) {
+        return members.findByWorkspaceIdAndUserId(workspaceId, actorId)
+                .flatMap(WorkspaceMember::role)
+                .filter(role -> role.isAtLeast(Role.ADMIN))
+                .orElseThrow(InsufficientAuthorityException::new);
+    }
+
+    private WorkspaceMember memberOf(UUID workspaceId, UUID userId) {
+        return members.findByWorkspaceIdAndUserId(workspaceId, userId).orElseThrow(MemberNotFoundException::new);
+    }
+
+    /** Fails if the workspace has a single OWNER (BR-001, BR-011). */
+    private void requireAnotherOwner(UUID workspaceId) {
+        if (members.countByWorkspaceIdAndRole(workspaceId, Role.OWNER.name()) <= 1) {
+            throw new LastOwnerException();
+        }
     }
 
     private static Recipient recipientOf(Map<UUID, UserSummary> summaries, UUID userId) {

@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
@@ -66,4 +67,14 @@ public interface WorkspaceMemberRepository
 
     /** How many members of a workspace have a stored role. Needs a workspace transaction. */
     long countByWorkspaceIdAndRole(UUID workspaceId, String role);
+
+    /**
+     * Ends a membership. Notes and other resources of the workspace are not touched. Needs a
+     * workspace transaction.
+     *
+     * @return 1 if the membership existed, 0 otherwise
+     */
+    @Modifying
+    @Query("delete from WorkspaceMember m where m.workspaceId = :workspaceId and m.userId = :userId")
+    int deleteMembership(@Param("workspaceId") UUID workspaceId, @Param("userId") UUID userId);
 }

@@ -11,6 +11,9 @@ import io.github.kaulinmindiola.warden.shared.web.ProblemException;
 import io.github.kaulinmindiola.warden.shared.web.ProblemType;
 import io.github.kaulinmindiola.warden.workspace.application.EmailNotVerifiedException;
 import io.github.kaulinmindiola.warden.workspace.application.InvalidWorkspaceException;
+import io.github.kaulinmindiola.warden.workspace.application.LastOwnerException;
+import io.github.kaulinmindiola.warden.workspace.application.MemberNotFoundException;
+import io.github.kaulinmindiola.warden.workspace.application.MembershipService;
 import io.github.kaulinmindiola.warden.workspace.application.WorkspaceNotFoundException;
 import io.github.kaulinmindiola.warden.workspace.application.WorkspaceService;
 import io.github.kaulinmindiola.warden.workspace.application.WorkspaceView;
@@ -29,15 +32,17 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-/** The caller's workspaces (UC-10, UC-11). Authenticated; served under {@code /api/v1}. */
+/** The caller's workspaces (UC-10, UC-11, UC-18). Authenticated; served under {@code /api/v1}. */
 @RestController
 @RequestMapping("/workspaces")
 class WorkspaceController {
 
     private final WorkspaceService workspaceService;
+    private final MembershipService membershipService;
 
-    WorkspaceController(WorkspaceService workspaceService) {
+    WorkspaceController(WorkspaceService workspaceService, MembershipService membershipService) {
         this.workspaceService = workspaceService;
+        this.membershipService = membershipService;
     }
 
     /**
@@ -82,5 +87,19 @@ class WorkspaceController {
         } catch (WorkspaceNotFoundException deleted) {
             throw new ProblemException(ProblemType.NOT_FOUND);
         }
+    }
+
+    /** The caller leaves the workspace: 204, or 409 {@code last-owner} (REQ-FUNC-042, REQ-FUNC-039). */
+    @PostMapping("/{workspaceId}/leave")
+    @RequiresWorkspaceRole(Role.VIEWER)
+    ResponseEntity<Void> leave(@PathVariable UUID workspaceId, @AuthenticationPrincipal CurrentUser user) {
+        try {
+            membershipService.leave(workspaceId, user.userId());
+        } catch (MemberNotFoundException | WorkspaceNotFoundException notFound) {
+            throw new ProblemException(ProblemType.NOT_FOUND);
+        } catch (LastOwnerException lastOwner) {
+            throw new ProblemException(ProblemType.LAST_OWNER);
+        }
+        return ResponseEntity.noContent().build();
     }
 }

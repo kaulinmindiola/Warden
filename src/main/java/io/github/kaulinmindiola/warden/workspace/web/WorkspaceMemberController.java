@@ -18,7 +18,9 @@ import io.github.kaulinmindiola.warden.workspace.application.WorkspaceService;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -26,7 +28,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Members of a workspace (UC-15, UC-16). Served under {@code /api/v1}. */
+/** Members of a workspace (UC-15 to UC-17). Served under {@code /api/v1}. */
 @RestController
 @RequestMapping("/workspaces/{workspaceId}/members")
 class WorkspaceMemberController {
@@ -73,5 +75,25 @@ class WorkspaceMemberController {
         } catch (LastOwnerException lastOwner) {
             throw new ProblemException(ProblemType.LAST_OWNER);
         }
+    }
+
+    /**
+     * Removes a member: 204; 403 {@code insufficient-role} when an ADMIN targets an OWNER; 404 if the
+     * user is not a member of this workspace; 409 {@code last-owner} (REQ-FUNC-041, REQ-FUNC-039).
+     */
+    @DeleteMapping("/{userId}")
+    @RequiresWorkspaceRole(Role.ADMIN)
+    ResponseEntity<Void> remove(
+            @PathVariable UUID workspaceId, @PathVariable UUID userId, @AuthenticationPrincipal CurrentUser actor) {
+        try {
+            membershipService.removeMember(workspaceId, actor.userId(), userId);
+        } catch (InsufficientAuthorityException insufficient) {
+            throw new ProblemException(ProblemType.INSUFFICIENT_ROLE);
+        } catch (MemberNotFoundException | WorkspaceNotFoundException notFound) {
+            throw new ProblemException(ProblemType.NOT_FOUND);
+        } catch (LastOwnerException lastOwner) {
+            throw new ProblemException(ProblemType.LAST_OWNER);
+        }
+        return ResponseEntity.noContent().build();
     }
 }
