@@ -41,7 +41,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Public contract and enumeration resistance; affects every workspace endpoint.
 - **Affected elements:** V07, V08, V12; REQ-FUNC-023, 024; DEC-015.
 - **Baseline direction:** As DEC-015.
-- **Status:** READY FOR ANALYSIS · **Phase:** 2
+- **Status:** ACCEPTED — [ADR-004](ADR-004-not-found-for-non-members.md) · **Phase:** 2
 
 ### ADR-005 — Tenant isolation with application filter and Row Level Security
 - **Description:** How to guarantee isolation independently of application code correctness.
