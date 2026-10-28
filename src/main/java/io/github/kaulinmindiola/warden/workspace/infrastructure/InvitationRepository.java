@@ -50,4 +50,19 @@ public interface InvitationRepository extends Repository<Invitation, UUID>, Pers
               and i.expiresAt > :now
             """)
     int markAccepted(@Param("id") UUID id, @Param("now") Instant now);
+
+    /**
+     * Revokes every invitation of the workspace still stored as pending, expired or not, when the
+     * workspace is deleted (REQ-FUNC-030, SDD V15). Needs a workspace transaction.
+     *
+     * @return how many invitations were revoked
+     */
+    @Modifying
+    @Query("""
+            update Invitation i
+            set i.status = io.github.kaulinmindiola.warden.workspace.domain.InvitationStatus.REVOKED
+            where i.workspaceId = :workspaceId
+              and i.status = io.github.kaulinmindiola.warden.workspace.domain.InvitationStatus.PENDING
+            """)
+    int revokePending(@Param("workspaceId") UUID workspaceId);
 }
