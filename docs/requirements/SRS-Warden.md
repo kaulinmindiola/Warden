@@ -1570,7 +1570,7 @@ N/A — Warden does not incorporate machine learning models or data-driven compo
 | REQ-INT-003 | Test | [LoginIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/LoginIT.java) | Passed | Login and refresh return `access_token`, `token_type` `Bearer`, `expires_in`, `refresh_token` and `refresh_expires_in` (LoginIT, RefreshIT) |
 | REQ-INT-004 | Test | [LoginIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/LoginIT.java) | Passed | ES256 JWT with exactly `iss`, `sub`, `sid`, `jti`, `iat` and `exp`; no roles, e-mail or workspace data |
 | REQ-INT-005 | Test | [ProblemDetailsContractIT](../../src/test/java/io/github/kaulinmindiola/warden/shared/web/ProblemDetailsContractIT.java) | Passed | Every 4xx and 5xx is `application/problem+json` per RFC 9457 with `traceId`; validation errors list each field and reason |
-| REQ-INT-006 | Test | TBD | Pending | — |
+| REQ-INT-006 | Test | [ApiConventionsIT](../../src/test/java/io/github/kaulinmindiola/warden/shared/web/ApiConventionsIT.java) | Passed | Without parameters 20 items are returned, size=101 gets 400 and the metadata matches the last page; the workspace list is paginated the same way (WorkspaceIT) |
 | REQ-INT-007 | Test | [ApiConventionsIT](../../src/test/java/io/github/kaulinmindiola/warden/shared/web/ApiConventionsIT.java) | Passed | UUID identifiers and ISO 8601 UTC timestamps (also RuntimeDefaultsIT, UuidV7GeneratorTest, TimeConfigurationTest) |
 | REQ-INT-008 | Test | TBD | Pending | — |
 | REQ-INT-009 | Test | TBD | Pending | — |
@@ -1595,31 +1595,31 @@ N/A — Warden does not incorporate machine learning models or data-driven compo
 | REQ-FUNC-019 | Test | [PasswordResetIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/PasswordResetIT.java) | Passed | Identical 202 for existing and unknown e-mails, a reset event only for the account; a second request invalidates the first link; 30 min + 1 s is rejected |
 | REQ-FUNC-020 | Test | [PasswordResetIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/PasswordResetIT.java) | Passed | The old password fails and the new one works, every session gets 401, the e-mail is verified and a password-changed event is recorded |
 | REQ-FUNC-021 | Test | [PasswordResetIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/PasswordResetIT.java) | Passed | Unknown, used, expired, wrong-purpose and malformed tokens get the same 400 and leave the password unchanged |
-| REQ-FUNC-022 | Test | TBD | Pending | — |
-| REQ-FUNC-023 | Test | TBD | Pending | — |
-| REQ-FUNC-024 | Test | TBD | Pending | — |
-| REQ-FUNC-025 | Test | TBD | Pending | — |
-| REQ-FUNC-026 | Test | TBD | Pending | — |
-| REQ-FUNC-027 | Test | TBD | Pending | — |
-| REQ-FUNC-028 | Test | TBD | Pending | — |
-| REQ-FUNC-029 | Test | TBD | Pending | — |
-| REQ-FUNC-030 | Test | TBD | Pending | — |
-| REQ-FUNC-031 | Test | TBD | Pending | — |
-| REQ-FUNC-032 | Test | TBD | Pending | — |
+| REQ-FUNC-022 | Test | [MemberRoleIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/MemberRoleIT.java) | Passed | A demoted ADMIN gets 403 on the next invitation attempt with the same access token; a removed member gets 404 on the next request (WorkspaceMembersIT, MemberRemovalIT); memberships are resolved on every request, never cached |
+| REQ-FUNC-023 | Test | [IsolationSuiteIT](../../src/test/java/io/github/kaulinmindiola/warden/isolation/IsolationSuiteIT.java) | Passed | For every one of the 14 workspace endpoints, a non-member and the OWNER of another workspace get exactly the response of a random workspace id |
+| REQ-FUNC-024 | Test | [RoleMatrixIT](../../src/test/java/io/github/kaulinmindiola/warden/isolation/RoleMatrixIT.java) | Passed | 14 endpoints by 4 roles: every role below the minimum gets 403 insufficient-role, the minimum and higher roles succeed |
+| REQ-FUNC-025 | Test | [NoteCrossWorkspaceIT](../../src/test/java/io/github/kaulinmindiola/warden/notes/web/NoteCrossWorkspaceIT.java) | Passed | A member of W and X gets 404 reading, editing or deleting a note of X, or changing, removing or revoking a member or invitation of X, through the path of W (MemberRoleIT, MemberRemovalIT, InvitationIT); the delivery retry of phase 4 inherits the check through the R7 gate |
+| REQ-FUNC-026 | Test | [IsolationSuiteIT](../../src/test/java/io/github/kaulinmindiola/warden/isolation/IsolationSuiteIT.java) | Passed | After deletion through the API, every registered endpoint answers the former OWNER and a former member exactly like a random workspace id; the workspace leaves the list (WorkspaceDeletionIT) |
+| REQ-FUNC-027 | Test | [WorkspaceIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/WorkspaceIT.java) | Passed | A verified user gets 201 and is the only OWNER; an unverified user gets 403 and nothing is created; empty and 101-character names get 400 |
+| REQ-FUNC-028 | Test | [WorkspaceIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/WorkspaceIT.java) | Passed | ADMIN in W and VIEWER in X sees exactly W and X with those roles, paginated oldest first; deleted and left workspaces are not listed |
+| REQ-FUNC-029 | Test | [WorkspaceDeletionIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/WorkspaceDeletionIT.java) | Passed | OWNER gets 204 and ADMIN 403 (also RoleMatrixIT); the deletion is logical and no restore operation exists |
+| REQ-FUNC-030 | Test | [WorkspaceDeletionIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/WorkspaceDeletionIT.java) | Passed | Pending invitations become REVOKED and a previously valid token gets the unknown-token 400; workspace.WorkspaceDeleted is verified as an outbox event (D-03); delivery cancellation is re-verified in phase 4 |
+| REQ-FUNC-031 | Test | [InvitationIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/InvitationIT.java) | Passed | An ADMIN gets 201 and a workspace.MemberInvited event with the token sealed (delivery at outbox level, D-03); role OWNER gets 400; a current member 409; a MEMBER 403 (RoleMatrixIT) |
+| REQ-FUNC-032 | Test | [InvitationIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/InvitationIT.java) | Passed | Re-inviting replaces the pending invitation, even an expired one, with InvitationRevoked(REPLACED); the previous token gets the unknown-token 400 (AcceptInvitationIT); delivery cancellation in phase 4 |
 | REQ-FUNC-033 | Test | TBD | Pending | — |
-| REQ-FUNC-034 | Test | TBD | Pending | — |
-| REQ-FUNC-035 | Test | TBD | Pending | — |
-| REQ-FUNC-036 | Test | TBD | Pending | — |
-| REQ-FUNC-037 | Test | TBD | Pending | — |
-| REQ-FUNC-038 | Test | TBD | Pending | — |
-| REQ-FUNC-039 | Test | TBD | Pending | — |
-| REQ-FUNC-040 | Test | TBD | Pending | — |
-| REQ-FUNC-041 | Test | TBD | Pending | — |
-| REQ-FUNC-042 | Test | TBD | Pending | — |
-| REQ-FUNC-043 | Test | TBD | Pending | — |
-| REQ-FUNC-044 | Test | TBD | Pending | — |
-| REQ-FUNC-045 | Test | TBD | Pending | — |
-| REQ-FUNC-046 | Test | TBD | Pending | — |
+| REQ-FUNC-034 | Test | [InvitationIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/InvitationIT.java) | Passed | Only pending, unexpired invitations are listed, newest first; no response contains the token or its hash |
+| REQ-FUNC-035 | Test | [InvitationIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/InvitationIT.java) | Passed | Revoking returns 204 with InvitationRevoked(REVOKED) and the token then gets the unknown-token 400 (AcceptInvitationIT); accepted, revoked, replaced or expired invitations get 409; delivery cancellation in phase 4 |
+| REQ-FUNC-036 | Test | [AcceptInvitationIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/AcceptInvitationIT.java) | Passed | 200 with the invited role; a different or unverified e-mail gets 403 without consuming the token, which then works from the invited account; unknown, malformed, used, expired, revoked, replaced and deleted-workspace tokens get an identical 400; a member gets 409 with no role change |
+| REQ-FUNC-037 | Test | [WorkspaceMembersIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/WorkspaceMembersIT.java) | Passed | A VIEWER gets every member of the workspace with e-mail, role and join date, and none of another workspace |
+| REQ-FUNC-038 | Test | [MemberRoleIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/MemberRoleIT.java) | Passed | An OWNER promotes a MEMBER to OWNER: 200; an ADMIN assigning OWNER or changing an OWNER: 403; an ADMIN demoting another ADMIN: 200 |
+| REQ-FUNC-039 | Test | [ConcurrentLastOwnerIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/ConcurrentLastOwnerIT.java) | Passed | 50 repetitions of two concurrent demotions of the two OWNERs: at most one succeeds; with a single OWNER, demoting, removing or leaving gets 409 last-owner with no change and with two OWNERs it works (MemberRoleIT, MemberRemovalIT) |
+| REQ-FUNC-040 | Test | [MemberRoleIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/MemberRoleIT.java) | Passed | workspace.MemberRoleChanged names the affected member and every OWNER at event time, the data for one notice per recipient without duplicates; deliveries are recorded in phase 4 (D-03) |
+| REQ-FUNC-041 | Test | [MemberRemovalIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/MemberRemovalIT.java) | Passed | An ADMIN removes a MEMBER: 204 and the MEMBER gets 404 on the next request; an ADMIN removing an OWNER gets 403; the notes of the removed member are kept |
+| REQ-FUNC-042 | Test | [MemberRemovalIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/MemberRemovalIT.java) | Passed | A VIEWER who leaves gets 204 and the workspace no longer appears in their list |
+| REQ-FUNC-043 | Test | [NoteIT](../../src/test/java/io/github/kaulinmindiola/warden/notes/web/NoteIT.java) | Passed | A VIEWER gets 200 on the list and the detail; an unknown note gets 404 |
+| REQ-FUNC-044 | Test | [NoteIT](../../src/test/java/io/github/kaulinmindiola/warden/notes/web/NoteIT.java) | Passed | A MEMBER gets 201 and the note records its author; a VIEWER gets 403; a 201-character title or a 10,001-character body gets 400 |
+| REQ-FUNC-045 | Test | [ConcurrentNoteEditIT](../../src/test/java/io/github/kaulinmindiola/warden/notes/web/ConcurrentNoteEditIT.java) | Passed | 50 repetitions of two concurrent edits of the same version: one 200 and one 409 version-conflict each time; a VIEWER gets 403 (NoteIT) |
+| REQ-FUNC-046 | Test | [NoteIT](../../src/test/java/io/github/kaulinmindiola/warden/notes/web/NoteIT.java) | Passed | A deleted note gets 404 and leaves the list; a VIEWER gets 403 |
 | REQ-FUNC-047 | Test | TBD | Pending | — |
 | REQ-FUNC-048 | Test | TBD | Pending | — |
 | REQ-FUNC-049 | Test | TBD | Pending | — |
@@ -1653,7 +1653,7 @@ N/A — Warden does not incorporate machine learning models or data-driven compo
 | REQ-SEC-009 | Test | TBD | Pending | — |
 | REQ-SEC-010 | Analysis | [ADR-019](../adr/ADR-019-response-time-equalization.md) | Partial | Mechanism in place: dummy Argon2 hash for login and a 250 ms response floor for register and forgot (ResponseFloorIT). The statistical analysis is pending |
 | REQ-SEC-011 | Test | TBD | Pending | — |
-| REQ-SEC-012 | Test | TBD | Pending | — |
+| REQ-SEC-012 | Test | [NoteRowLevelSecurityIT](../../src/test/java/io/github/kaulinmindiola/warden/notes/infrastructure/NoteRowLevelSecurityIT.java) | Passed | Raw JDBC as warden_app without application filters: with the context of W no row of X is read or modified and without context nothing is visible; the same for invitations, where the token-holder context sees one row and may only accept it (InvitationRowLevelSecurityIT) |
 | REQ-SEC-013 | Test | TBD | Pending | — |
 | REQ-SEC-014 | Test | TBD | Pending | — |
 | REQ-SEC-015 | Test | TBD | Pending | — |
@@ -1696,7 +1696,7 @@ N/A — Warden does not incorporate machine learning models or data-driven compo
 | REQ-DIST-001 | Test | TBD | Pending | — |
 | REQ-MAINT-001 | Test | TBD | Pending | — |
 | REQ-MAINT-002 | Test | TBD | Pending | — |
-| REQ-MAINT-003 | Test | TBD | Pending | — |
+| REQ-MAINT-003 | Test | [WorkspaceEndpointRulesIT](../../src/test/java/io/github/kaulinmindiola/warden/isolation/WorkspaceEndpointRulesIT.java) | Passed | R7 fails the build when a workspace handler is missing from IsolationRegistry; shown in CI by the disposable pull request #18 (https://github.com/kaulinmindiola/warden/pull/18), closed without merging |
 | REQ-MAINT-004 | Test | [pom.xml](../../pom.xml) | Passed | JaCoCo gate in `verify`: 97.4 % line coverage of domain and application (525/539); the build fails with a 0.99 minimum |
 | REQ-MAINT-005 | Test | TBD | Pending | — |
 | REQ-MAINT-006 | Inspection | TBD | Pending | — |

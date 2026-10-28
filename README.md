@@ -6,21 +6,23 @@ reuse detection, and reliable e-mail delivery.
 
 ## Status
 
-🚧 Early development. Milestone **M1 — identity core** (`v0.2.0`) is complete:
+🚧 Early development. Milestone **M2 — multi-tenancy and RBAC** (`v0.3.0`) is complete:
 
-- Registration, e-mail verification, login, sessions, refresh-token rotation with reuse
-  detection, logout, session termination and password reset, all without revealing whether an
-  e-mail has an account.
-- Short-lived ES256 access tokens; revoked sessions are rejected on the very next request
-  through a Redis denylist, with PostgreSQL as the fallback.
-- Single-use tokens stored only as hashes; link tokens travel in events only encrypted;
-  append-only audit log and transactional outbox.
+- Identity core (M1): registration, e-mail verification, login, sessions, refresh-token rotation
+  with reuse detection, logout, session termination and password reset, all without revealing
+  whether an e-mail has an account.
+- Workspaces with the roles VIEWER, MEMBER, ADMIN and OWNER, member management with last-OWNER
+  protection, invitations by e-mail with single-use links, and notes as the reference resource.
+- Tenant isolation in three layers: authorization against the current membership on every
+  request, a Hibernate tenant filter and forced PostgreSQL Row Level Security. A non-member cannot
+  tell a foreign or deleted workspace from a non-existent one.
 - `./mvnw verify` runs formatting, version, architecture, unit and integration checks against
-  real PostgreSQL 17 and Redis 8, and fails below 80 % line coverage of the domain and
-  application layers.
+  real PostgreSQL 17 and Redis 8, fails below 80 % line coverage of the domain and application
+  layers, and fails if a workspace endpoint is missing from the isolation suite or does not
+  declare its minimum role.
 
-Workspaces, roles and notes come next (M2). Notifications are recorded in the outbox but not
-yet delivered by e-mail (M4).
+Abuse protection and degraded modes come next (M3). Notifications are recorded in the outbox but
+not yet delivered by e-mail (M4).
 
 ## Run locally
 
@@ -78,7 +80,26 @@ Run the full build, including the integration tests on Testcontainers (Docker mu
 | DELETE | `/api/v1/auth/sessions/{sessionId}` | Authenticated |
 | POST | `/api/v1/auth/password/forgot` | Public |
 | POST | `/api/v1/auth/password/reset` | Public |
+| POST | `/api/v1/workspaces` | Authenticated, verified e-mail |
+| GET | `/api/v1/workspaces` | Authenticated |
+| GET | `/api/v1/workspaces/{workspaceId}` | VIEWER |
+| DELETE | `/api/v1/workspaces/{workspaceId}` | OWNER |
+| POST | `/api/v1/workspaces/{workspaceId}/leave` | VIEWER |
+| GET | `/api/v1/workspaces/{workspaceId}/members` | VIEWER |
+| PUT | `/api/v1/workspaces/{workspaceId}/members/{userId}/role` | ADMIN (OWNER to assign OWNER or change an OWNER) |
+| DELETE | `/api/v1/workspaces/{workspaceId}/members/{userId}` | ADMIN (OWNER to remove an OWNER) |
+| POST | `/api/v1/workspaces/{workspaceId}/invitations` | ADMIN |
+| GET | `/api/v1/workspaces/{workspaceId}/invitations` | ADMIN |
+| DELETE | `/api/v1/workspaces/{workspaceId}/invitations/{invitationId}` | ADMIN |
+| POST | `/api/v1/invitations/accept` | Authenticated, verified invited e-mail |
+| GET | `/api/v1/workspaces/{workspaceId}/notes` | VIEWER |
+| POST | `/api/v1/workspaces/{workspaceId}/notes` | MEMBER |
+| GET | `/api/v1/workspaces/{workspaceId}/notes/{noteId}` | VIEWER |
+| PUT | `/api/v1/workspaces/{workspaceId}/notes/{noteId}` | MEMBER |
+| DELETE | `/api/v1/workspaces/{workspaceId}/notes/{noteId}` | MEMBER |
 
+Roles are ordered VIEWER < MEMBER < ADMIN < OWNER; a role grants everything the lower ones do.
+For non-members, workspace routes answer 404 exactly as for a workspace that does not exist.
 Errors follow RFC 9457; the types are listed in [problem-types.md](docs/api/problem-types.md).
 
 ## Documentation
