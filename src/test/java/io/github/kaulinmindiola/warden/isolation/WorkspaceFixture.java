@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import io.github.kaulinmindiola.warden.shared.security.Role;
 import io.github.kaulinmindiola.warden.support.IamTestClient;
+import java.security.SecureRandom;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.http.HttpHeaders;
@@ -15,10 +16,10 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 
 /**
  * The workspace under test, another workspace, and the callers of the isolation suite and the role
- * matrix. Memberships and notes are seeded as the superuser, which bypasses Row Level Security;
- * the endpoints that add members arrive in later steps.
+ * matrix. Memberships, notes and invitations are seeded as the superuser, which bypasses Row Level
+ * Security.
  *
- * @param ownerId the OWNER of both workspaces and author of seeded notes
+ * @param ownerId the OWNER of both workspaces and author of seeded resources
  * @param workspace the workspace the requests target
  * @param otherWorkspace a second workspace of the same owner
  * @param outsiderToken a user who belongs to no workspace
@@ -32,6 +33,8 @@ record WorkspaceFixture(
         UUID otherWorkspace,
         String outsiderToken,
         String otherMemberToken) {
+
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     static WorkspaceFixture create(IamTestClient iam, JdbcClient superuser) throws Exception {
         String ownerEmail = iam.registerVerifiedAccount();
@@ -69,6 +72,11 @@ record WorkspaceFixture(
             public UUID newMember() {
                 return known ? seedMember(workspaceId) : UUID.randomUUID();
             }
+
+            @Override
+            public UUID newInvitation() {
+                return known ? seedInvitation(workspaceId) : UUID.randomUUID();
+            }
         };
     }
 
@@ -102,6 +110,26 @@ record WorkspaceFixture(
         } catch (Exception failure) {
             throw new IllegalStateException("Could not seed a member", failure);
         }
+    }
+
+    /** A pending invitation that does not expire during the test, whatever the test clock says. */
+    private UUID seedInvitation(UUID workspaceId) {
+        UUID invitationId = UUID.randomUUID();
+        byte[] tokenHash = new byte[32];
+        RANDOM.nextBytes(tokenHash);
+        superuser
+                .sql("""
+                        INSERT INTO invitation (id, workspace_id, email_normalized, role, locale, token_hash, status,
+                                                invited_by, expires_at, created_at)
+                        VALUES (?, ?, ?, 'MEMBER', 'es', ?, 'PENDING', ?, now() + interval '3650 days', now())
+                        """)
+                .param(invitationId)
+                .param(workspaceId)
+                .param("seeded-" + invitationId + "@mail.com")
+                .param(tokenHash)
+                .param(ownerId)
+                .update();
+        return invitationId;
     }
 
     private static UUID createWorkspace(IamTestClient iam, String accessToken, String name) throws Exception {

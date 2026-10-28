@@ -2,6 +2,8 @@ package io.github.kaulinmindiola.warden.iam.application;
 
 import io.github.kaulinmindiola.warden.iam.UserDirectory;
 import io.github.kaulinmindiola.warden.iam.UserSummary;
+import io.github.kaulinmindiola.warden.iam.domain.EmailAddress;
+import io.github.kaulinmindiola.warden.iam.domain.InvalidEmailException;
 import io.github.kaulinmindiola.warden.iam.domain.UserAccount;
 import io.github.kaulinmindiola.warden.iam.infrastructure.UserAccountRepository;
 import java.util.Map;
@@ -33,6 +35,27 @@ class UserDirectoryService implements UserDirectory {
         }
         return accounts.findByIdIn(userIds).stream()
                 .collect(Collectors.toUnmodifiableMap(UserAccount::id, UserDirectoryService::summaryOf));
+    }
+
+    @Override
+    public Optional<UserSummary> findByEmail(String rawEmail) {
+        return emailAddress(rawEmail).flatMap(accounts::findByEmail).map(UserDirectoryService::summaryOf);
+    }
+
+    @Override
+    public Optional<String> normalizeEmail(String rawEmail) {
+        return emailAddress(rawEmail).map(EmailAddress::value);
+    }
+
+    private static Optional<EmailAddress> emailAddress(String rawEmail) {
+        if (rawEmail == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(EmailAddress.of(rawEmail));
+        } catch (InvalidEmailException malformed) {
+            return Optional.empty();
+        }
     }
 
     private static UserSummary summaryOf(UserAccount account) {

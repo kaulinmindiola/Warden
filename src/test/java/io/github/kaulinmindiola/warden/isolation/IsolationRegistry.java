@@ -4,6 +4,7 @@ import io.github.kaulinmindiola.warden.shared.security.Role;
 import io.github.kaulinmindiola.warden.shared.web.ApiWebConfiguration;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
@@ -27,6 +28,8 @@ public final class IsolationRegistry {
     private static final String MEMBERS = WORKSPACE_ROUTE + "/members";
     private static final String MEMBER = MEMBERS + "/{userId}";
     private static final String MEMBER_ROLE = MEMBER + "/role";
+    private static final String INVITATIONS = WORKSPACE_ROUTE + "/invitations";
+    private static final String INVITATION = INVITATIONS + "/{invitationId}";
     private static final String NOTES = WORKSPACE_ROUTE + "/notes";
     private static final String NOTE = NOTES + "/{noteId}";
     private static final String NEW_NOTE = "{\"title\":\"Registry note\",\"body\":\"Body\"}";
@@ -66,6 +69,26 @@ public final class IsolationRegistry {
                     Role.ADMIN,
                     204,
                     target -> MockMvcRequestBuilders.delete(MEMBER, target.workspaceId(), target.newMember())),
+            new WorkspaceEndpoint(
+                    HttpMethod.POST,
+                    INVITATIONS,
+                    Role.ADMIN,
+                    201,
+                    target -> MockMvcRequestBuilders.post(INVITATIONS, target.workspaceId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"invited-" + UUID.randomUUID() + "@mail.com\",\"role\":\"MEMBER\"}")),
+            new WorkspaceEndpoint(
+                    HttpMethod.GET,
+                    INVITATIONS,
+                    Role.ADMIN,
+                    200,
+                    target -> MockMvcRequestBuilders.get(INVITATIONS, target.workspaceId())),
+            new WorkspaceEndpoint(
+                    HttpMethod.DELETE,
+                    INVITATION,
+                    Role.ADMIN,
+                    204,
+                    target -> MockMvcRequestBuilders.delete(INVITATION, target.workspaceId(), target.newInvitation())),
             new WorkspaceEndpoint(
                     HttpMethod.GET,
                     NOTES,
