@@ -19,8 +19,8 @@ public record WorkspaceEndpoint(
         HttpMethod method, String pattern, Role minimumRole, int successStatus, RequestFactory request) {
 
     /**
-     * What a request is aimed at. For a workspace that exists, {@link #newNote()} and {@link
-     * #newMember()} create a fresh resource in it; for a random workspace id they return random ids.
+     * What a request is aimed at. For a workspace that exists, the {@code new…} methods create a
+     * fresh resource in it; for a random workspace id they return random ids.
      */
     public interface Target {
 
@@ -31,6 +31,9 @@ public record WorkspaceEndpoint(
 
         /** A new user who is a MEMBER of the workspace. */
         UUID newMember();
+
+        /** A new pending invitation of the workspace. */
+        UUID newInvitation();
     }
 
     /** Builds a request against a target. */

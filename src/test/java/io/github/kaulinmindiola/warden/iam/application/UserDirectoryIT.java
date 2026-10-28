@@ -6,6 +6,7 @@ import io.github.kaulinmindiola.warden.iam.UserDirectory;
 import io.github.kaulinmindiola.warden.iam.UserSummary;
 import io.github.kaulinmindiola.warden.support.IamTestClient;
 import io.github.kaulinmindiola.warden.support.IntegrationTest;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -57,5 +58,19 @@ class UserDirectoryIT extends IntegrationTest {
 
         assertThat(found).containsOnlyKeys(first, second);
         assertThat(userDirectory.findByIds(Set.of())).isEmpty();
+    }
+
+    @Test
+    void addressesAreNormalizedWithTheAccountRule() throws Exception {
+        String email = iam.registerNewAccount();
+        String submitted = "  " + email.toUpperCase(Locale.ROOT) + " ";
+
+        assertThat(userDirectory.normalizeEmail(submitted)).contains(email);
+        assertThat(userDirectory.findByEmail(submitted).map(UserSummary::id)).contains(iam.userIdOf(email));
+        assertThat(userDirectory.findByEmail("nobody-" + UUID.randomUUID() + "@mail.com"))
+                .isEmpty();
+        assertThat(userDirectory.normalizeEmail("not-an-email")).isEmpty();
+        assertThat(userDirectory.normalizeEmail(null)).isEmpty();
+        assertThat(userDirectory.findByEmail("not-an-email")).isEmpty();
     }
 }
