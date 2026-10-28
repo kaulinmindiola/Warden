@@ -13,6 +13,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
 /**
  * The workspace under test, another workspace, and the callers of the isolation suite and the role
@@ -20,6 +21,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * Security.
  *
  * @param ownerId the OWNER of both workspaces and author of seeded resources
+ * @param ownerToken an access token of that OWNER
  * @param workspace the workspace the requests target
  * @param otherWorkspace a second workspace of the same owner
  * @param outsiderToken a user who belongs to no workspace
@@ -29,6 +31,7 @@ record WorkspaceFixture(
         IamTestClient iam,
         JdbcClient superuser,
         UUID ownerId,
+        String ownerToken,
         UUID workspace,
         UUID otherWorkspace,
         String outsiderToken,
@@ -48,6 +51,7 @@ record WorkspaceFixture(
                 iam,
                 superuser,
                 iam.userIdOf(ownerEmail),
+                ownerToken,
                 workspace,
                 otherWorkspace,
                 outsiderToken,
@@ -85,6 +89,16 @@ record WorkspaceFixture(
         String email = iam.registerNewAccount();
         addMember(superuser, workspace, iam.userIdOf(email), role);
         return iam.login(email);
+    }
+
+    /** Deletes {@link #workspace()} through the API, as its OWNER (UC-19). */
+    void deleteWorkspace() throws Exception {
+        MvcResult result =
+                perform(MockMvcRequestBuilders.delete(IsolationRegistry.WORKSPACE_ROUTE, workspace), ownerToken);
+        if (result.getResponse().getStatus() != 204) {
+            throw new IllegalStateException("Deleting the fixture workspace answered "
+                    + result.getResponse().getStatus());
+        }
     }
 
     MvcResult perform(MockHttpServletRequestBuilder request, String accessToken) throws Exception {
