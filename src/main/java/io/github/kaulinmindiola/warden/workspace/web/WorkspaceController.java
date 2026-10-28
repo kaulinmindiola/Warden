@@ -10,10 +10,12 @@ import io.github.kaulinmindiola.warden.shared.web.PageResponse;
 import io.github.kaulinmindiola.warden.shared.web.ProblemException;
 import io.github.kaulinmindiola.warden.shared.web.ProblemType;
 import io.github.kaulinmindiola.warden.workspace.application.EmailNotVerifiedException;
+import io.github.kaulinmindiola.warden.workspace.application.InsufficientAuthorityException;
 import io.github.kaulinmindiola.warden.workspace.application.InvalidWorkspaceException;
 import io.github.kaulinmindiola.warden.workspace.application.LastOwnerException;
 import io.github.kaulinmindiola.warden.workspace.application.MemberNotFoundException;
 import io.github.kaulinmindiola.warden.workspace.application.MembershipService;
+import io.github.kaulinmindiola.warden.workspace.application.WorkspaceDeletionService;
 import io.github.kaulinmindiola.warden.workspace.application.WorkspaceNotFoundException;
 import io.github.kaulinmindiola.warden.workspace.application.WorkspaceService;
 import io.github.kaulinmindiola.warden.workspace.application.WorkspaceView;
@@ -23,6 +25,7 @@ import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,17 +35,25 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-/** The caller's workspaces (UC-10, UC-11, UC-18). Authenticated; served under {@code /api/v1}. */
+/**
+ * The caller's workspaces (UC-10, UC-11, UC-18, UC-19). Authenticated; served under {@code
+ * /api/v1}.
+ */
 @RestController
 @RequestMapping("/workspaces")
 class WorkspaceController {
 
     private final WorkspaceService workspaceService;
     private final MembershipService membershipService;
+    private final WorkspaceDeletionService deletionService;
 
-    WorkspaceController(WorkspaceService workspaceService, MembershipService membershipService) {
+    WorkspaceController(
+            WorkspaceService workspaceService,
+            MembershipService membershipService,
+            WorkspaceDeletionService deletionService) {
         this.workspaceService = workspaceService;
         this.membershipService = membershipService;
+        this.deletionService = deletionService;
     }
 
     /**
@@ -87,6 +98,23 @@ class WorkspaceController {
         } catch (WorkspaceNotFoundException deleted) {
             throw new ProblemException(ProblemType.NOT_FOUND);
         }
+    }
+
+    /**
+     * Deletes the workspace logically and irreversibly: 204; 403 {@code insufficient-role} for
+     * anyone but an OWNER (REQ-FUNC-029, REQ-FUNC-030).
+     */
+    @DeleteMapping("/{workspaceId}")
+    @RequiresWorkspaceRole(Role.OWNER)
+    ResponseEntity<Void> delete(@PathVariable UUID workspaceId, @AuthenticationPrincipal CurrentUser user) {
+        try {
+            deletionService.delete(workspaceId, user.userId());
+        } catch (WorkspaceNotFoundException deleted) {
+            throw new ProblemException(ProblemType.NOT_FOUND);
+        } catch (InsufficientAuthorityException insufficient) {
+            throw new ProblemException(ProblemType.INSUFFICIENT_ROLE);
+        }
+        return ResponseEntity.noContent().build();
     }
 
     /** The caller leaves the workspace: 204, or 409 {@code last-owner} (REQ-FUNC-042, REQ-FUNC-039). */

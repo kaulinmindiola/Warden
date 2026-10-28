@@ -10,8 +10,8 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * A workspace (SDD V06). Deleting it is logical: a deleted workspace is kept but behaves as
- * non-existent for everyone (BR-012).
+ * A workspace (SDD V06). Deleting it is logical and irreversible: a deleted workspace is kept but
+ * behaves as non-existent for everyone (BR-012, REQ-FUNC-029).
  */
 @Entity
 @Table(name = "workspace")
@@ -46,6 +46,20 @@ public class Workspace {
     public static Workspace create(UUID id, WorkspaceName name, UUID createdBy, Instant now) {
         Objects.requireNonNull(now, "now");
         return new Workspace(id, name, createdBy, now.truncatedTo(ChronoUnit.MICROS));
+    }
+
+    /**
+     * Deletes the workspace logically. There is no way back. Authority and the effects on
+     * invitations are handled by the caller, which holds the workspace lock (SDD V14-A4).
+     *
+     * @throws IllegalStateException if it is already deleted
+     */
+    public void delete(Instant now) {
+        Objects.requireNonNull(now, "now");
+        if (deletedAt != null) {
+            throw new IllegalStateException("The workspace is already deleted");
+        }
+        deletedAt = now.truncatedTo(ChronoUnit.MICROS);
     }
 
     public boolean isDeleted() {

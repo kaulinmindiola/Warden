@@ -44,6 +44,12 @@ public final class IsolationRegistry {
                     200,
                     target -> MockMvcRequestBuilders.get(WORKSPACE_ROUTE, target.workspaceId())),
             new WorkspaceEndpoint(
+                    HttpMethod.DELETE,
+                    WORKSPACE_ROUTE,
+                    Role.OWNER,
+                    204,
+                    target -> MockMvcRequestBuilders.delete(WORKSPACE_ROUTE, target.workspaceId())),
+            new WorkspaceEndpoint(
                     HttpMethod.POST,
                     LEAVE,
                     Role.VIEWER,
