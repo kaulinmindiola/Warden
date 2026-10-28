@@ -7,6 +7,7 @@ import io.github.kaulinmindiola.warden.support.IntegrationTest;
 import io.github.kaulinmindiola.warden.support.Verifies;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import java.util.HexFormat;
 import java.util.UUID;
 import org.hibernate.Session;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * SDD V07 layers L2 and L3: each kind of tenant transaction sets exactly its own
- * transaction-local setting, only {@code inWorkspace} enables the Hibernate filter, nothing
+ * transaction-local settings, only {@code inWorkspace} enables the Hibernate filter, nothing
  * survives the transaction, and nesting is refused.
  */
 class TenantTransactionsIT extends IntegrationTest {
@@ -41,7 +42,7 @@ class TenantTransactionsIT extends IntegrationTest {
 
         Context inside = tenantTransactions.inWorkspace(workspaceId, this::context);
 
-        assertThat(inside).isEqualTo(new Context(workspaceId.toString(), "", "", true));
+        assertThat(inside).isEqualTo(new Context(workspaceId.toString(), "", "", "", true));
     }
 
     @Test
@@ -51,24 +52,40 @@ class TenantTransactionsIT extends IntegrationTest {
 
         Context inside = tenantTransactions.forUser(userId, this::context);
 
-        assertThat(inside).isEqualTo(new Context("", userId.toString(), "", false));
+        assertThat(inside).isEqualTo(new Context("", userId.toString(), "", "", false));
+    }
+
+    @Test
+    @Verifies("REQ-SEC-012")
+    void forInvitationHolderSetsTheUserAndTheHexEncodedTokenHash() {
+        UUID userId = UUID.randomUUID();
+        byte[] tokenHash = new byte[32];
+        tokenHash[0] = (byte) 0xAB;
+        tokenHash[31] = 0x01;
+
+        Context inside = tenantTransactions.forInvitationHolder(userId, tokenHash, this::context);
+
+        assertThat(inside)
+                .isEqualTo(new Context("", userId.toString(), "", HexFormat.of().formatHex(tokenHash), false));
+        assertThat(inside.invitation()).hasSize(64).startsWith("ab").endsWith("01");
     }
 
     @Test
     void systemSetsOnlyTheSystemContext() {
         Context inside = tenantTransactions.system(this::context);
 
-        assertThat(inside).isEqualTo(new Context("", "", "on", false));
+        assertThat(inside).isEqualTo(new Context("", "", "on", "", false));
     }
 
     @Test
     @Verifies("REQ-SEC-011")
     void theContextEndsWithItsTransaction() {
         tenantTransactions.inWorkspace(UUID.randomUUID(), this::context);
+        tenantTransactions.forInvitationHolder(UUID.randomUUID(), new byte[32], this::context);
 
         Context after = new TransactionTemplate(transactionManager).execute(status -> context());
 
-        assertThat(after).isEqualTo(new Context("", "", "", false));
+        assertThat(after).isEqualTo(new Context("", "", "", "", false));
     }
 
     @Test
@@ -88,6 +105,7 @@ class TenantTransactionsIT extends IntegrationTest {
                 setting(TenantTransactions.WORKSPACE_SETTING),
                 setting(TenantTransactions.USER_SETTING),
                 setting(TenantTransactions.SYSTEM_SETTING),
+                setting(TenantTransactions.INVITATION_SETTING),
                 entityManager.unwrap(Session.class).getEnabledFilter(TenantTransactions.TENANT_FILTER) != null);
     }
 
@@ -99,5 +117,5 @@ class TenantTransactionsIT extends IntegrationTest {
                 .single();
     }
 
-    private record Context(String workspace, String user, String system, boolean tenantFilter) {}
+    private record Context(String workspace, String user, String system, String invitation, boolean tenantFilter) {}
 }
