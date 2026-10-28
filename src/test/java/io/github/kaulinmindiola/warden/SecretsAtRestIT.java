@@ -83,11 +83,12 @@ class SecretsAtRestIT extends IntegrationTest {
 
         System.out.println("REQ-SEC-004: " + issued.secrets().size() + " secrets searched in " + scanned.size()
                 + " columns: " + scanned);
-        assertThat(issued.secrets()).hasSize(12);
+        assertThat(issued.secrets()).hasSize(14);
         assertThat(scanned)
                 .contains(
                         "one_time_token.token_hash",
                         "refresh_token.token_hash",
+                        "invitation.token_hash",
                         "outbox_event.payload",
                         "audit_log.details",
                         "user_account.password_hash",
@@ -100,17 +101,21 @@ class SecretsAtRestIT extends IntegrationTest {
     void theOutboxCarriesLinkTokensOnlySealed() throws Exception {
         Issued issued = runEveryFlowThatIssuesSecrets();
 
-        List<Map<String, Object>> sealed =
-                owner().sql("""
+        List<Map<String, Object>> sealed = owner().sql("""
                         SELECT type,
                                payload -> 'secret' ->> 'ciphertext' AS ciphertext,
                                payload -> 'secret' ->> 'keyId' AS key_id,
                                payload -> 'secret' ->> 'expiresAt' AS expires_at
                         FROM outbox_event
                         WHERE jsonb_exists(payload, 'secret')
-                          AND payload -> 'recipient' ->> 'userId' = ?
+                          AND (payload -> 'recipient' ->> 'userId' = ?
+                               OR payload ->> 'invitationId' = ?)
                         ORDER BY occurred_at
-                        """).param(issued.userId().toString()).query().listOfRows();
+                        """)
+                .param(issued.userId().toString())
+                .param(issued.invitationId().toString())
+                .query()
+                .listOfRows();
 
         Set<String> opened = new LinkedHashSet<>();
         for (Map<String, Object> row : sealed) {
@@ -125,6 +130,7 @@ class SecretsAtRestIT extends IntegrationTest {
                 .containsExactly(
                         "iam.EmailVerificationRequested",
                         "iam.EmailVerificationRequested",
+                        "workspace.MemberInvited",
                         "iam.PasswordResetRequested",
                         "iam.PasswordResetRequested");
         assertThat(opened).containsExactlyElementsOf(issued.linkTokens());
@@ -132,7 +138,8 @@ class SecretsAtRestIT extends IntegrationTest {
 
     /**
      * Registration (twice), login, resending and confirming the verification, refresh, refresh
-     * reuse, a second login, two reset requests and the reset itself.
+     * reuse, a second login, an invitation accepted by another account, two reset requests and
+     * the reset itself.
      */
     private Issued runEveryFlowThatIssuesSecrets() throws Exception {
         Set<String> linkTokens = new LinkedHashSet<>();
@@ -158,6 +165,10 @@ class SecretsAtRestIT extends IntegrationTest {
                 .andExpect(status().isUnauthorized());
         Tokens secondLogin = iam.loginTokens(email);
 
+        Invited invited = inviteAnotherAccountAndAccept(secondLogin.accessToken());
+        linkTokens.add(invited.invitationToken());
+        secrets.add(invited.inviteeAccessToken());
+
         iam.postJson(API + "/auth/password/forgot", Map.of("email", email), null)
                 .andExpect(status().isAccepted());
         linkTokens.add(iam.latestPasswordResetToken(userId));
@@ -174,8 +185,50 @@ class SecretsAtRestIT extends IntegrationTest {
             secrets.add(tokens.refreshToken());
             secrets.add(tokens.accessToken());
         }
-        assertThat(linkTokens).hasSize(4);
-        return new Issued(userId, linkTokens, secrets);
+        assertThat(linkTokens).hasSize(5);
+        return new Issued(userId, invited.invitationId(), linkTokens, secrets);
+    }
+
+    /**
+     * The verified user creates a workspace and invites another verified account, which accepts
+     * with the token from the sealed event (UC-12, UC-14).
+     */
+    private Invited inviteAnotherAccountAndAccept(String ownerAccessToken) throws Exception {
+        String workspace = iam.postJson(API + "/workspaces", Map.of("name", "Secrets"), ownerAccessToken)
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        String workspaceId = JsonPath.read(workspace, "$.id");
+        String inviteeEmail = iam.registerVerifiedAccount();
+        String invitation = iam.postJson(
+                        API + "/workspaces/" + workspaceId + "/invitations",
+                        Map.of("email", inviteeEmail, "role", "MEMBER"),
+                        ownerAccessToken)
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        UUID invitationId = UUID.fromString(JsonPath.read(invitation, "$.id"));
+        String invitationToken = sealedInvitationToken(invitationId);
+        String inviteeAccessToken = iam.login(inviteeEmail);
+        iam.postJson(API + "/invitations/accept", Map.of("token", invitationToken), inviteeAccessToken)
+                .andExpect(status().isOk());
+        return new Invited(invitationId, invitationToken, inviteeAccessToken);
+    }
+
+    private String sealedInvitationToken(UUID invitationId) {
+        Map<String, Object> secret =
+                owner().sql("""
+                        SELECT payload -> 'secret' ->> 'ciphertext' AS ciphertext,
+                               payload -> 'secret' ->> 'keyId' AS key_id,
+                               payload -> 'secret' ->> 'expiresAt' AS expires_at
+                        FROM outbox_event
+                        WHERE type = 'workspace.MemberInvited' AND payload ->> 'invitationId' = ?
+                        """).param(invitationId.toString()).query().singleRow();
+        return secretCipher.open(new SealedSecret(
+                (String) secret.get("ciphertext"), (String) secret.get("key_id"), Instant.parse((String)
+                        secret.get("expires_at"))));
     }
 
     private Tokens refresh(String refreshToken) throws Exception {
@@ -239,5 +292,7 @@ class SecretsAtRestIT extends IntegrationTest {
         return JdbcClient.create(ownerDataSource());
     }
 
-    private record Issued(UUID userId, Set<String> linkTokens, List<String> secrets) {}
+    private record Invited(UUID invitationId, String invitationToken, String inviteeAccessToken) {}
+
+    private record Issued(UUID userId, UUID invitationId, Set<String> linkTokens, List<String> secrets) {}
 }
