@@ -103,7 +103,9 @@ counters exist with zero from startup. No subject appears in tags (REQ-OBS-003).
 - Bad: clients behind one NAT share the per-IP limits.
 - Bad: concurrent failed logins for one e-mail can all pass the check before any of them consumes,
   so a burst may exceed 5 by its concurrency; the per-IP limit bounds that burst.
-- Bad: until step 3.5, a Redis failure makes the limited endpoints answer 500.
+- Bad: during a Redis outage each instance counts on its own, so with several instances the
+  effective limit is multiplied by their number (RISK-012), and the local counts are not copied
+  back when Redis returns: a subject can get one extra window's budget.
 - Neutral: every test request comes from 127.0.0.1, so the test classpath raises only the per-IP
   capacities; `IamRateLimitIT` restores the SRS values in its own context with one random client
   address per test, and the shipped defaults are checked against the main `application.yaml`.
@@ -123,7 +125,11 @@ counters exist with zero from startup. No subject appears in tags (REQ-OBS-003).
   REQ-SEC-007, REQ-SEC-008, REQ-SEC-009 and REQ-FUNC-007.
 - `InvitationRateLimitIT`: REQ-FUNC-033, including a quota shared by admins and rejected requests
   that spend nothing.
-- Step 3.5 adds the confirmation of the local fallback (REQ-REL-008).
+- `LocalBucketSourceTest`, `FailoverBucketSourceTest`: local buckets with the same semantics, a
+  bounded map, the switch to local buckets on a Redis error, one retry of Redis every 5 seconds and
+  the `warden_ratelimit_degraded` gauge.
+- `RateLimitFallbackIT`: with Redis frozen, the 6th failed login answers 429 (REQ-REL-008), and the
+  limits return to Redis once it answers.
 
 ## Pros and Cons of the Options
 

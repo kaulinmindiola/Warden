@@ -62,7 +62,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** G-02 depends on it; the SDD found a gap (revocations during an outage) not covered by REQ-REL-007.
 - **Affected elements:** V09, V11, V14-A7, V17; REQ-FUNC-018; REQ-REL-007; DEC-036.
 - **Baseline direction:** `sid` denylist with 630 s TTL; instance-local degraded mode on PostgreSQL; reconciliation on recovery and every 30 s.
-- **Status:** READY FOR ANALYSIS · **Phase:** 3
+- **Status:** ACCEPTED — [ADR-007](ADR-007-revocation-denylist-and-degradation.md) · **Phase:** 3
 
 ### ADR-008 — Transactional outbox with at-least-once dispatch
 - **Description:** How to publish events atomically with state changes and process them across instances.
