@@ -22,8 +22,8 @@ import org.testcontainers.DockerClientFactory;
  * shared between tests.
  *
  * <p>The static helpers give raw JDBC access for database-level tests (Row Level Security, role
- * privileges) that must run without the application's filters, and freeze the shared Redis
- * container for degradation tests.
+ * privileges) that must run without the application's filters, and freeze the shared Redis and
+ * PostgreSQL containers for degradation tests.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -78,6 +78,28 @@ public abstract class IntegrationTest {
         DockerClientFactory.instance()
                 .client()
                 .unpauseContainerCmd(SharedContainers.REDIS.getContainerId())
+                .exec();
+    }
+
+    /**
+     * Freezes the shared PostgreSQL container, like {@link #pauseRedis()}. Pooled connections stay
+     * open and a query on one of them would wait forever, so callers also evict the idle
+     * connections of the pool they use; new connections then fail at the Hikari timeout. Every
+     * caller must call {@link #resumePostgres()} in a {@code finally} block or an
+     * {@code @AfterEach}.
+     */
+    protected static void pausePostgres() {
+        DockerClientFactory.instance()
+                .client()
+                .pauseContainerCmd(SharedContainers.POSTGRES.getContainerId())
+                .exec();
+    }
+
+    /** Lets the shared PostgreSQL container answer again after {@link #pausePostgres()}. */
+    protected static void resumePostgres() {
+        DockerClientFactory.instance()
+                .client()
+                .unpauseContainerCmd(SharedContainers.POSTGRES.getContainerId())
                 .exec();
     }
 

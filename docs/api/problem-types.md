@@ -68,3 +68,7 @@ A `rate-limited` response carries a `Retry-After` header with the number of whol
 rounded up, until the limit admits a request again (RFC 9110, delay-seconds form). Retrying
 earlier gets another 429. The response does not say which limit was reached, so it never reveals
 whether an e-mail address belongs to an account.
+
+A `service-unavailable` response carries `Retry-After: 5`. It is sent when PostgreSQL cannot be
+reached, alone or together with Redis (REQ-REL-007, REQ-REL-009, ADR-007); the request is denied,
+never answered without its data.

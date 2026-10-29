@@ -39,6 +39,9 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  * Conversion failures report a generic reason because framework messages contain class names.
  * Spring Security exceptions are rethrown so the security filter chain answers them. A problem
  * that carries a retry time is sent with a {@code Retry-After} header in whole seconds.
+ *
+ * <p>A failure caused by PostgreSQL being unreachable becomes 503 {@code service-unavailable} with
+ * {@code Retry-After: 5} (REQ-REL-009): the request is denied, never answered without the data.
  */
 @RestControllerAdvice
 public class ProblemDetailsAdvice {
@@ -55,9 +58,7 @@ public class ProblemDetailsAdvice {
 
     @ExceptionHandler(ProblemException.class)
     ResponseEntity<ProblemDetail> handleProblem(ProblemException ex, HttpServletRequest request) {
-        HttpHeaders headers = new HttpHeaders();
-        ex.retryAfterSeconds().ifPresent(seconds -> headers.set(HttpHeaders.RETRY_AFTER, Long.toString(seconds)));
-        return respond(ex.type(), ex.detail(), ex.violations(), headers, request, traceId());
+        return problem(ex, request, traceId());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -125,6 +126,14 @@ public class ProblemDetailsAdvice {
         if (hasCause(ex, RequestBodyTooLargeException.class)) {
             return handleBodyTooLarge(new RequestBodyTooLargeException(RequestSizeLimitFilter.MAX_BODY_BYTES), request);
         }
+        if (DatabaseUnavailable.causedBy(ex)) {
+            String traceId = traceId();
+            log.warn(
+                    "PostgreSQL is unavailable ({}); the request is denied with 503, traceId={}",
+                    DatabaseUnavailable.describe(ex),
+                    traceId);
+            return problem(ProblemException.serviceUnavailable(), request, traceId);
+        }
         if (ex instanceof ErrorResponse errorResponse) {
             ProblemType type = forFrameworkStatus(errorResponse.getStatusCode().value());
             if (type != null) {
@@ -140,6 +149,13 @@ public class ProblemDetailsAdvice {
                 new HttpHeaders(),
                 request,
                 traceId);
+    }
+
+    private static ResponseEntity<ProblemDetail> problem(
+            ProblemException ex, HttpServletRequest request, String traceId) {
+        HttpHeaders headers = new HttpHeaders();
+        ex.retryAfterSeconds().ifPresent(seconds -> headers.set(HttpHeaders.RETRY_AFTER, Long.toString(seconds)));
+        return respond(ex.type(), ex.detail(), ex.violations(), headers, request, traceId);
     }
 
     private ResponseEntity<ProblemDetail> validationProblem(

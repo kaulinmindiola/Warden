@@ -34,6 +34,15 @@ class ProblemExceptionTest {
     }
 
     @Test
+    void serviceUnavailableTellsTheClientToRetryAfterFiveSeconds() {
+        ProblemException problem = ProblemException.serviceUnavailable();
+
+        assertThat(problem.type()).isEqualTo(ProblemType.SERVICE_UNAVAILABLE);
+        assertThat(problem.detail()).isEqualTo(ProblemType.SERVICE_UNAVAILABLE.defaultDetail());
+        assertThat(problem.retryAfterSeconds()).hasValue(5L);
+    }
+
+    @Test
     void aNonPositiveRetryAfterIsRejected() {
         assertThatThrownBy(() -> ProblemException.withRetryAfter(ProblemType.RATE_LIMITED, Duration.ZERO))
                 .isInstanceOf(IllegalArgumentException.class);
