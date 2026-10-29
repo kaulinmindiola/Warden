@@ -3,6 +3,7 @@ package io.github.kaulinmindiola.warden.iam.infrastructure;
 import io.github.kaulinmindiola.warden.iam.domain.AuthSession;
 import io.github.kaulinmindiola.warden.shared.persistence.PersistOperations;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -26,6 +27,17 @@ public interface AuthSessionRepository extends Repository<AuthSession, UUID>, Pe
 
     /** Whether the session exists and is not revoked; the fallback when Redis cannot answer. */
     boolean existsByIdAndRevokedAtIsNull(UUID id);
+
+    /**
+     * Sessions revoked after {@code since}, to rebuild the Redis denylist (SDD V14-A7). Served by
+     * the partial index on {@code revoked_at}.
+     */
+    @Query("""
+            select new io.github.kaulinmindiola.warden.iam.infrastructure.RevokedSession(s.id, s.revokedAt)
+            from AuthSession s
+            where s.revokedAt > :since
+            """)
+    List<RevokedSession> findRevokedSince(@Param("since") Instant since);
 
     /**
      * Revokes the session if it belongs to the user and is not revoked yet. When several requests

@@ -11,6 +11,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.DockerClientFactory;
 
 /**
  * Base class for integration tests ({@code *IT}).
@@ -21,7 +22,8 @@ import org.springframework.test.context.DynamicPropertySource;
  * shared between tests.
  *
  * <p>The static helpers give raw JDBC access for database-level tests (Row Level Security, role
- * privileges) that must run without the application's filters.
+ * privileges) that must run without the application's filters, and freeze the shared Redis
+ * container for degradation tests.
  */
 @SpringBootTest
 @ActiveProfiles("test")
@@ -56,6 +58,27 @@ public abstract class IntegrationTest {
                 SharedContainers.POSTGRES.getJdbcUrl(),
                 SharedContainers.POSTGRES.getUsername(),
                 SharedContainers.POSTGRES.getPassword());
+    }
+
+    /**
+     * Freezes the shared Redis container: connections stay open but no command is answered, so
+     * every call fails at the command timeout, as with an unreachable Redis. Pausing keeps the
+     * mapped port, which a stop and start would change under the cached Spring context. Every
+     * caller must call {@link #resumeRedis()} in a {@code finally} block or an {@code @AfterEach}.
+     */
+    protected static void pauseRedis() {
+        DockerClientFactory.instance()
+                .client()
+                .pauseContainerCmd(SharedContainers.REDIS.getContainerId())
+                .exec();
+    }
+
+    /** Lets the shared Redis container answer again after {@link #pauseRedis()}. */
+    protected static void resumeRedis() {
+        DockerClientFactory.instance()
+                .client()
+                .unpauseContainerCmd(SharedContainers.REDIS.getContainerId())
+                .exec();
     }
 
     /**

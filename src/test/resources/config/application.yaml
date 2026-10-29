@@ -4,6 +4,9 @@
 warden:
   keys:
     allow-ephemeral: true
+  # No background worker ticks at an unpredictable moment: tests call the workers directly.
+  scheduling:
+    enabled: false
   # No minimum response time, so registering accounts in every test stays fast.
   # ResponseFloorIT sets its own value and verifies the floor (ADR-019).
   security:
