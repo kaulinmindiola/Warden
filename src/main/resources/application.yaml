@@ -28,10 +28,14 @@ spring:
   jpa:
     open-in-view: false
 
+  # Commands fail after 200 ms instead of Lettuce's default 60 s, so an unavailable Redis sends
+  # revocation checks to PostgreSQL at once (SDD V17, V23; ADR-007).
   data:
     redis:
       host: ${WARDEN_REDIS_HOST:localhost}
       port: ${WARDEN_REDIS_PORT:6379}
+      timeout: ${WARDEN_REDIS_TIMEOUT:200ms}
+      connect-timeout: ${WARDEN_REDIS_CONNECT_TIMEOUT:1s}
 
 # Key material (REQ-INST-002, SDD V18). Never commit values: they come only from the
 # environment. Only the local profile allows generating missing keys at startup.
