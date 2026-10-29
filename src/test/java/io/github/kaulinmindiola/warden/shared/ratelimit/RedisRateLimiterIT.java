@@ -18,7 +18,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 /**
  * The application {@link RateLimiter} against the Redis 8 test container, with buckets driven by
  * the test clock: exhaustion and recovery, hashed keys with an expiry, the rejection metric and
- * buckets shared by independent instances.
+ * buckets shared by independent instances. The SRS values of the limits are checked against the
+ * main {@code application.yaml} by {@code RateLimitPropertiesTest}, because the test classpath
+ * raises the per-IP capacities.
  */
 class RedisRateLimiterIT extends IntegrationTest {
 
@@ -44,24 +46,6 @@ class RedisRateLimiterIT extends IntegrationTest {
 
     @Value("${spring.data.redis.port}")
     private int redisPort;
-
-    @Test
-    void theConfiguredLimitsAreTheSrsValues() {
-        assertThat(properties.limitFor(RateLimitPolicy.LOGIN_FAILURES_PER_EMAIL))
-                .isEqualTo(limit(5, Duration.ofMinutes(15)));
-        assertThat(properties.limitFor(RateLimitPolicy.LOGIN_PER_IP)).isEqualTo(limit(20, Duration.ofMinutes(1)));
-        assertThat(properties.limitFor(RateLimitPolicy.PASSWORD_RESET_PER_EMAIL))
-                .isEqualTo(limit(3, Duration.ofHours(1)));
-        assertThat(properties.limitFor(RateLimitPolicy.PASSWORD_RESET_PER_IP))
-                .isEqualTo(limit(10, Duration.ofHours(1)));
-        assertThat(properties.limitFor(RateLimitPolicy.REFRESH_PER_IP)).isEqualTo(limit(60, Duration.ofMinutes(1)));
-        assertThat(properties.limitFor(RateLimitPolicy.VERIFICATION_RESEND_PER_ACCOUNT))
-                .isEqualTo(limit(3, Duration.ofHours(1)));
-        assertThat(properties.limitFor(RateLimitPolicy.INVITATIONS_PER_WORKSPACE))
-                .isEqualTo(limit(50, Duration.ofDays(1)));
-        assertThat(properties.limitFor(RateLimitPolicy.INVITATIONS_PER_INVITER))
-                .isEqualTo(limit(100, Duration.ofDays(1)));
-    }
 
     @Test
     void aBucketInRedisIsExhaustedAndRecoversAfterItsWindow() {
@@ -154,10 +138,6 @@ class RedisRateLimiterIT extends IntegrationTest {
                 .tag(BucketRateLimiter.POLICY_TAG, policy.key())
                 .counter()
                 .count();
-    }
-
-    private static RateLimitProperties.Limit limit(int capacity, Duration window) {
-        return new RateLimitProperties.Limit(capacity, window);
     }
 
     private static String newEmail() {

@@ -8,6 +8,8 @@ import io.github.kaulinmindiola.warden.iam.infrastructure.OneTimeTokenConsumer;
 import io.github.kaulinmindiola.warden.iam.infrastructure.UserAccountRepository;
 import io.github.kaulinmindiola.warden.shared.crypto.SecureTokenGenerator;
 import io.github.kaulinmindiola.warden.shared.crypto.TokenHasher;
+import io.github.kaulinmindiola.warden.shared.ratelimit.RateLimitPolicy;
+import io.github.kaulinmindiola.warden.shared.ratelimit.RateLimiter;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
@@ -17,7 +19,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * E-mail verification (UC-02): confirming an address with a token (REQ-FUNC-006) and resending
- * the link (REQ-FUNC-007).
+ * the link (REQ-FUNC-007), at most 3 times per account per hour.
  */
 @Service
 public class EmailVerificationService {
@@ -26,6 +28,7 @@ public class EmailVerificationService {
     private final UserAccountRepository accounts;
     private final EmailVerificationIssuer verificationIssuer;
     private final TokenHasher tokenHasher;
+    private final RateLimiter rateLimiter;
     private final Clock clock;
     private final TransactionTemplate transactions;
 
@@ -34,12 +37,14 @@ public class EmailVerificationService {
             UserAccountRepository accounts,
             EmailVerificationIssuer verificationIssuer,
             TokenHasher tokenHasher,
+            RateLimiter rateLimiter,
             Clock clock,
             PlatformTransactionManager transactionManager) {
         this.tokenConsumer = tokenConsumer;
         this.accounts = accounts;
         this.verificationIssuer = verificationIssuer;
         this.tokenHasher = tokenHasher;
+        this.rateLimiter = rateLimiter;
         this.clock = clock;
         this.transactions = new TransactionTemplate(transactionManager);
     }
@@ -72,8 +77,14 @@ public class EmailVerificationService {
      *
      * @param userId the authenticated user
      * @throws EmailAlreadyVerifiedException if the e-mail is already verified
+     * @throws io.github.kaulinmindiola.warden.shared.web.ProblemException {@code rate-limited} if
+     *     the account requested 3 resends within the window; every request counts, so the limit
+     *     also bounds the database work of repeated calls
      */
     public void resend(UUID userId) {
+        rateLimiter
+                .consume(RateLimitPolicy.VERIFICATION_RESEND_PER_ACCOUNT, userId.toString())
+                .requireAllowed();
         transactions.executeWithoutResult(status -> {
             UserAccount account = accounts.findById(userId)
                     .orElseThrow(() -> new IllegalStateException("The authenticated account does not exist"));

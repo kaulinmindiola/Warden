@@ -7,6 +7,7 @@ import io.github.kaulinmindiola.warden.shared.security.ResponseFloor;
 import io.github.kaulinmindiola.warden.shared.web.FieldViolation;
 import io.github.kaulinmindiola.warden.shared.web.ProblemException;
 import io.github.kaulinmindiola.warden.shared.web.ProblemType;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -29,13 +30,16 @@ class PasswordResetController {
 
     /**
      * Requests a reset link. Responds 202 with no body whether or not the e-mail has an account
-     * (REQ-FUNC-019), and 400 {@code validation-error} if the e-mail is missing or malformed.
+     * (REQ-FUNC-019); 400 {@code validation-error} if the e-mail is missing or malformed; 429
+     * {@code rate-limited} with {@code Retry-After} when the client IP or the e-mail is over its
+     * limit (REQ-SEC-008). The IP is the TCP peer; {@code X-Forwarded-For} is ignored (ADR-014).
      * Every outcome takes at least the response floor (REQ-SEC-010, ADR-019).
      */
     @PostMapping("/forgot")
-    ResponseEntity<Void> forgot(@RequestBody ForgotPasswordRequest request) {
+    ResponseEntity<Void> forgot(@RequestBody ForgotPasswordRequest request, HttpServletRequest httpRequest) {
+        String clientIp = httpRequest.getRemoteAddr();
         try {
-            responseFloor.run(() -> passwordResetService.requestReset(request.email()));
+            responseFloor.run(() -> passwordResetService.requestReset(request.email(), clientIp));
         } catch (InvalidPasswordResetException invalid) {
             throw validationError(invalid);
         }

@@ -19,6 +19,8 @@ import io.github.kaulinmindiola.warden.shared.audit.AuditLog;
 import io.github.kaulinmindiola.warden.shared.crypto.SecureTokenGenerator;
 import io.github.kaulinmindiola.warden.shared.crypto.TokenHasher;
 import io.github.kaulinmindiola.warden.shared.id.UuidV7Generator;
+import io.github.kaulinmindiola.warden.shared.ratelimit.RateLimitPolicy;
+import io.github.kaulinmindiola.warden.shared.ratelimit.RateLimiter;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -29,14 +31,17 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Authenticates with e-mail and password and starts a session (UC-03, SDD V14-A2 without rate
- * limits, which arrive in phase 3).
+ * Authenticates with e-mail and password and starts a session (UC-03, SDD V14-A2).
  *
  * <ol>
+ *   <li>Applies the rate limits before any work: the failed-login limit of the normalized e-mail
+ *       is checked without consuming it (REQ-SEC-006), so a blocked e-mail gets 429 even with the
+ *       right password, and the login limit of the client IP is consumed (REQ-SEC-007). Unknown
+ *       e-mails are limited exactly like existing ones, so a 429 reveals nothing (BR-007).
  *   <li>Verifies the password with Argon2 against the account's hash, or against the dummy hash
  *       when the e-mail is unknown, malformed or missing, so every case costs the same work.
- *   <li>Any failure is audited in its own transaction and ends in the same {@link
- *       InvalidCredentialsException}.
+ *   <li>Any failure consumes the failed-login limit of a well-formed e-mail, is audited in its own
+ *       transaction and ends in the same {@link InvalidCredentialsException}.
  *   <li>On success, computes a stronger hash if the parameters have changed, then, in one
  *       transaction, stores the rehash, the session, the refresh token hash and the audit record.
  *   <li>Signs the access token after the commit.
@@ -55,6 +60,7 @@ public class LoginService {
     private final TokenHasher tokenHasher;
     private final JwtIssuer jwtIssuer;
     private final AuditLog auditLog;
+    private final RateLimiter rateLimiter;
     private final UuidV7Generator ids;
     private final Clock clock;
     private final TransactionTemplate transactions;
@@ -68,6 +74,7 @@ public class LoginService {
             TokenHasher tokenHasher,
             JwtIssuer jwtIssuer,
             AuditLog auditLog,
+            RateLimiter rateLimiter,
             UuidV7Generator ids,
             Clock clock,
             PlatformTransactionManager transactionManager) {
@@ -79,6 +86,7 @@ public class LoginService {
         this.tokenHasher = tokenHasher;
         this.jwtIssuer = jwtIssuer;
         this.auditLog = auditLog;
+        this.rateLimiter = rateLimiter;
         this.ids = ids;
         this.clock = clock;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -90,15 +98,29 @@ public class LoginService {
      * @param rawEmail e-mail as submitted
      * @param password password as submitted
      * @param userAgent the {@code User-Agent} header, or {@code null}
+     * @param clientIp address of the client, as seen by the server
      * @throws InvalidCredentialsException if the e-mail or the password is wrong, for any reason
+     * @throws io.github.kaulinmindiola.warden.shared.web.ProblemException {@code rate-limited} if
+     *     the e-mail has too many recent failures or the IP too many recent logins
      */
-    public LoginResult login(String rawEmail, String password, String userAgent) {
+    public LoginResult login(String rawEmail, String password, String userAgent, String clientIp) {
+        EmailAddress email = parseEmail(rawEmail);
+        if (email != null) {
+            rateLimiter
+                    .check(RateLimitPolicy.LOGIN_FAILURES_PER_EMAIL, email.value())
+                    .requireAllowed();
+        }
+        rateLimiter.consume(RateLimitPolicy.LOGIN_PER_IP, clientIp).requireAllowed();
+
         String candidate = password == null ? "" : password;
-        UserAccount account = findAccount(rawEmail);
+        UserAccount account = email == null ? null : accounts.findByEmail(email).orElse(null);
         boolean authenticated = account != null
                 ? passwordHasher.matches(candidate, account.passwordHash())
                 : passwordHasher.matchesDummy(candidate);
         if (!authenticated) {
+            if (email != null) {
+                rateLimiter.consume(RateLimitPolicy.LOGIN_FAILURES_PER_EMAIL, email.value());
+            }
             auditLog.recordFailure(new AuditEntry(
                     AuditAction.LOGIN,
                     account == null ? null : account.id(),
@@ -119,12 +141,13 @@ public class LoginService {
         return new LoginResult(accessToken.value(), accessToken.expiresInSeconds(), refreshToken, refreshExpiresIn);
     }
 
-    private UserAccount findAccount(String rawEmail) {
+    /** The normalized e-mail, or {@code null} when it is missing or malformed. */
+    private static EmailAddress parseEmail(String rawEmail) {
         if (rawEmail == null) {
             return null;
         }
         try {
-            return accounts.findByEmail(EmailAddress.of(rawEmail)).orElse(null);
+            return EmailAddress.of(rawEmail);
         } catch (InvalidEmailException malformed) {
             return null;
         }

@@ -19,6 +19,8 @@ import io.github.kaulinmindiola.warden.shared.crypto.SecureTokenGenerator;
 import io.github.kaulinmindiola.warden.shared.crypto.TokenHasher;
 import io.github.kaulinmindiola.warden.shared.id.UuidV7Generator;
 import io.github.kaulinmindiola.warden.shared.outbox.OutboxPublisher;
+import io.github.kaulinmindiola.warden.shared.ratelimit.RateLimitPolicy;
+import io.github.kaulinmindiola.warden.shared.ratelimit.RateLimiter;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -35,6 +37,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  * V14-A1).
  *
  * <ol>
+ *   <li>Consumes the refresh limit of the client IP before looking at the token (REQ-SEC-009),
+ *       so guessing tokens costs the same whether they exist or not.
  *   <li>Marks the presented token used with a conditional update. If it wins and its session is
  *       active, a new refresh token is stored and the session's last use updated; an inactive
  *       session rolls the transaction back, leaving the token unused.
@@ -62,6 +66,7 @@ public class RefreshService {
     private final SecureTokenGenerator tokenGenerator;
     private final TokenHasher tokenHasher;
     private final JwtIssuer jwtIssuer;
+    private final RateLimiter rateLimiter;
     private final UuidV7Generator ids;
     private final Clock clock;
     private final TransactionTemplate transactions;
@@ -77,6 +82,7 @@ public class RefreshService {
             SecureTokenGenerator tokenGenerator,
             TokenHasher tokenHasher,
             JwtIssuer jwtIssuer,
+            RateLimiter rateLimiter,
             UuidV7Generator ids,
             Clock clock,
             PlatformTransactionManager transactionManager) {
@@ -90,6 +96,7 @@ public class RefreshService {
         this.tokenGenerator = tokenGenerator;
         this.tokenHasher = tokenHasher;
         this.jwtIssuer = jwtIssuer;
+        this.rateLimiter = rateLimiter;
         this.ids = ids;
         this.clock = clock;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -99,11 +106,15 @@ public class RefreshService {
      * Exchanges a refresh token for a new access token and a new refresh token of the same session.
      *
      * @param presented the refresh token from the request body
+     * @param clientIp address of the client, as seen by the server
      * @return the new tokens
      * @throws InvalidRefreshTokenException if the token is missing, malformed, unknown, used,
      *     expired or belongs to an inactive session
+     * @throws io.github.kaulinmindiola.warden.shared.web.ProblemException {@code rate-limited} if
+     *     the IP sent too many refresh requests recently
      */
-    public LoginResult refresh(String presented) {
+    public LoginResult refresh(String presented, String clientIp) {
+        rateLimiter.consume(RateLimitPolicy.REFRESH_PER_IP, clientIp).requireAllowed();
         if (presented == null || !presented.startsWith(SecureTokenGenerator.REFRESH_TOKEN_PREFIX)) {
             throw new InvalidRefreshTokenException();
         }
