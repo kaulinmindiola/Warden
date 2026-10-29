@@ -18,6 +18,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -124,6 +125,19 @@ class ProblemDetailsContractIT extends IntegrationTest {
     }
 
     @Test
+    void aRateLimitedProblemTellsWhenToRetryInWholeSecondsRoundedUp() throws Exception {
+        expectProblem(mockMvc.perform(get(BASE + "/retry-after")), ProblemType.RATE_LIMITED)
+                .andExpect(jsonPath("$.detail").value(ProblemType.RATE_LIMITED.defaultDetail()))
+                .andExpect(header().string("Retry-After", "2"));
+    }
+
+    @Test
+    void aProblemWithoutARetryTimeHasNoRetryAfterHeader() throws Exception {
+        expectProblem(mockMvc.perform(get(BASE + "/problems/not-found")), ProblemType.NOT_FOUND)
+                .andExpect(header().doesNotExist("Retry-After"));
+    }
+
+    @Test
     @Verifies("REQ-SEC-017")
     void anUnexpectedExceptionRevealsNoInternals() throws Exception {
         expectProblem(mockMvc.perform(get(BASE + "/boom")), ProblemType.INTERNAL_ERROR)
@@ -175,6 +189,11 @@ class ProblemDetailsContractIT extends IntegrationTest {
         @GetMapping("/boom")
         void boom() {
             throw new IllegalStateException(SENSITIVE);
+        }
+
+        @GetMapping("/retry-after")
+        void retryAfter() {
+            throw ProblemException.withRetryAfter(ProblemType.RATE_LIMITED, Duration.ofMillis(1500));
         }
     }
 

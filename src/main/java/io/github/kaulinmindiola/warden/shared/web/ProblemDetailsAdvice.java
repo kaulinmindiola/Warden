@@ -37,7 +37,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  * <p>Unexpected exceptions become a generic {@code internal-error}: no message, stack trace or
  * class name reaches the client (REQ-SEC-017); the exception is logged with the same trace id.
  * Conversion failures report a generic reason because framework messages contain class names.
- * Spring Security exceptions are rethrown so the security filter chain answers them.
+ * Spring Security exceptions are rethrown so the security filter chain answers them. A problem
+ * that carries a retry time is sent with a {@code Retry-After} header in whole seconds.
  */
 @RestControllerAdvice
 public class ProblemDetailsAdvice {
@@ -54,7 +55,9 @@ public class ProblemDetailsAdvice {
 
     @ExceptionHandler(ProblemException.class)
     ResponseEntity<ProblemDetail> handleProblem(ProblemException ex, HttpServletRequest request) {
-        return respond(ex.type(), ex.detail(), ex.violations(), new HttpHeaders(), request, traceId());
+        HttpHeaders headers = new HttpHeaders();
+        ex.retryAfterSeconds().ifPresent(seconds -> headers.set(HttpHeaders.RETRY_AFTER, Long.toString(seconds)));
+        return respond(ex.type(), ex.detail(), ex.violations(), headers, request, traceId());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

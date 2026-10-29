@@ -61,3 +61,10 @@ Example:
 `method-not-allowed`, `not-acceptable` and `unsupported-media-type` are protocol-level types
 produced by the web framework; they extend the catalogue of SDD V08 so that every 4xx response
 follows this format.
+
+## `Retry-After`
+
+A `rate-limited` response carries a `Retry-After` header with the number of whole seconds,
+rounded up, until the limit admits a request again (RFC 9110, delay-seconds form). Retrying
+earlier gets another 429. The response does not say which limit was reached, so it never reveals
+whether an e-mail address belongs to an account.
