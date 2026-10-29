@@ -40,7 +40,8 @@ class EmailVerificationController {
 
     /**
      * Authenticated. Sends a new verification link and invalidates the previous ones. Responds
-     * 202, or 409 {@code email-already-verified} (REQ-FUNC-007).
+     * 202; 409 {@code email-already-verified}; 429 {@code rate-limited} with {@code Retry-After}
+     * from the 4th request of the account within an hour (REQ-FUNC-007).
      */
     @PostMapping("/verify/resend")
     ResponseEntity<Void> resend(@AuthenticationPrincipal CurrentUser user) {

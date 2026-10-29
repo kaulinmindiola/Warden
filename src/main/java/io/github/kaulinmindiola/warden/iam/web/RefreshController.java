@@ -5,6 +5,7 @@ import io.github.kaulinmindiola.warden.iam.application.LoginResult;
 import io.github.kaulinmindiola.warden.iam.application.RefreshService;
 import io.github.kaulinmindiola.warden.shared.web.ProblemException;
 import io.github.kaulinmindiola.warden.shared.web.ProblemType;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -31,18 +32,21 @@ class RefreshController {
     /**
      * Rotates the refresh token. Responds 200 with new tokens and {@code Cache-Control:
      * no-store}; 400 {@code malformed-request} if an {@code Authorization} header is sent
-     * (REQ-INT-002); 401 {@code invalid-refresh-token} with the same body whatever was wrong.
+     * (REQ-INT-002); 401 {@code invalid-refresh-token} with the same body whatever was wrong; 429
+     * {@code rate-limited} with {@code Retry-After} when the client IP is over its limit
+     * (REQ-SEC-009). The IP is the TCP peer; {@code X-Forwarded-For} is ignored (ADR-014).
      */
     @PostMapping("/refresh")
     ResponseEntity<TokenResponse> refresh(
             @RequestBody RefreshRequest request,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization,
+            HttpServletRequest httpRequest) {
         if (authorization != null) {
             throw new ProblemException(ProblemType.MALFORMED_REQUEST, HEADER_NOT_ALLOWED);
         }
         LoginResult result;
         try {
-            result = refreshService.refresh(request.refreshToken());
+            result = refreshService.refresh(request.refreshToken(), httpRequest.getRemoteAddr());
         } catch (InvalidRefreshTokenException invalid) {
             throw new ProblemException(ProblemType.INVALID_REFRESH_TOKEN);
         }

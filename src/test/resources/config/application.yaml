@@ -8,3 +8,14 @@ warden:
   # ResponseFloorIT sets its own value and verifies the floor (ADR-019).
   security:
     response-floor: 0ms
+  # Every request of the test suite comes from 127.0.0.1 (MockMvc and the RANDOM_PORT tests
+  # alike), so the per-IP limits would make unrelated tests reject each other. Only their capacity
+  # is raised; windows and the per-e-mail and per-account limits keep the SRS values.
+  # IamRateLimitIT restores the SRS capacities in its own context (REQ-SEC-007 to REQ-SEC-009).
+  ratelimit:
+    login-per-ip:
+      capacity: 100000
+    password-reset-per-ip:
+      capacity: 100000
+    refresh-per-ip:
+      capacity: 100000

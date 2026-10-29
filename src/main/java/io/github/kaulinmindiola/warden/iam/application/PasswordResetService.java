@@ -27,6 +27,8 @@ import io.github.kaulinmindiola.warden.shared.crypto.SecureTokenGenerator;
 import io.github.kaulinmindiola.warden.shared.crypto.TokenHasher;
 import io.github.kaulinmindiola.warden.shared.id.UuidV7Generator;
 import io.github.kaulinmindiola.warden.shared.outbox.OutboxPublisher;
+import io.github.kaulinmindiola.warden.shared.ratelimit.RateLimitPolicy;
+import io.github.kaulinmindiola.warden.shared.ratelimit.RateLimiter;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -40,6 +42,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 /**
  * Password recovery: requesting a reset link (UC-08, REQ-FUNC-019) and replacing the password
  * with it (UC-09, REQ-FUNC-020, REQ-FUNC-021).
+ *
+ * <p>A request is limited per client IP and per normalized e-mail, existing or not (REQ-SEC-008),
+ * so the limits reveal nothing about accounts. The IP is counted before the e-mail is even read.
  *
  * <p>A request always ends the same way, whether or not the e-mail has an account (BR-007): the
  * token is generated in both cases; only for an existing account are the previous links
@@ -70,6 +75,7 @@ public class PasswordResetService {
     private final SecretCipher secretCipher;
     private final OutboxPublisher outbox;
     private final AuditLog auditLog;
+    private final RateLimiter rateLimiter;
     private final UuidV7Generator ids;
     private final Clock clock;
     private final TransactionTemplate transactions;
@@ -87,6 +93,7 @@ public class PasswordResetService {
             SecretCipher secretCipher,
             OutboxPublisher outbox,
             AuditLog auditLog,
+            RateLimiter rateLimiter,
             UuidV7Generator ids,
             Clock clock,
             PlatformTransactionManager transactionManager) {
@@ -102,6 +109,7 @@ public class PasswordResetService {
         this.secretCipher = secretCipher;
         this.outbox = outbox;
         this.auditLog = auditLog;
+        this.rateLimiter = rateLimiter;
         this.ids = ids;
         this.clock = clock;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -111,10 +119,17 @@ public class PasswordResetService {
      * Sends a reset link if the e-mail has an account. Returns normally in both cases.
      *
      * @param rawEmail e-mail as submitted
+     * @param clientIp address of the client, as seen by the server
      * @throws InvalidPasswordResetException if the e-mail is missing or malformed
+     * @throws io.github.kaulinmindiola.warden.shared.web.ProblemException {@code rate-limited} if
+     *     the IP or the e-mail sent too many reset requests recently
      */
-    public void requestReset(String rawEmail) {
+    public void requestReset(String rawEmail, String clientIp) {
+        rateLimiter.consume(RateLimitPolicy.PASSWORD_RESET_PER_IP, clientIp).requireAllowed();
         EmailAddress email = parseEmail(rawEmail);
+        rateLimiter
+                .consume(RateLimitPolicy.PASSWORD_RESET_PER_EMAIL, email.value())
+                .requireAllowed();
         String token = tokenGenerator.newOneTimeToken();
         TokenHash hash = TokenHash.of(tokenHasher.sha256(token));
         transactions.executeWithoutResult(
