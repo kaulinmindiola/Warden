@@ -12,6 +12,8 @@ import io.github.kaulinmindiola.warden.shared.crypto.TokenHasher;
 import io.github.kaulinmindiola.warden.shared.id.UuidV7Generator;
 import io.github.kaulinmindiola.warden.shared.outbox.OutboxPublisher;
 import io.github.kaulinmindiola.warden.shared.outbox.Recipient;
+import io.github.kaulinmindiola.warden.shared.ratelimit.RateLimitPolicy;
+import io.github.kaulinmindiola.warden.shared.ratelimit.RateLimiter;
 import io.github.kaulinmindiola.warden.shared.security.Role;
 import io.github.kaulinmindiola.warden.shared.tenancy.TenantTransactions;
 import io.github.kaulinmindiola.warden.workspace.InvitationRevoked;
@@ -41,6 +43,11 @@ import org.springframework.stereotype.Service;
  * workspace row is locked and the actor's role read again under the lock, which also serializes
  * re-invitations of the same address (V16). Only the hash of the token is stored; the token
  * travels sealed in {@code workspace.MemberInvited} (REQ-SEC-004, REQ-SEC-005).
+ *
+ * <p>Creation is limited to 50 invitations per workspace and 100 per inviter, each per day
+ * (REQ-FUNC-033, ADR-014). Both limits are consumed under the workspace lock, after validation,
+ * the authority check and the member check, so only invitations that would be sent count: a
+ * rejected request never spends the workspace's quota.
  */
 @Service
 public class InvitationService {
@@ -63,6 +70,7 @@ public class InvitationService {
     private final SecretCipher secretCipher;
     private final OutboxPublisher outbox;
     private final AuditLog auditLog;
+    private final RateLimiter rateLimiter;
     private final UuidV7Generator ids;
     private final Clock clock;
 
@@ -77,6 +85,7 @@ public class InvitationService {
             SecretCipher secretCipher,
             OutboxPublisher outbox,
             AuditLog auditLog,
+            RateLimiter rateLimiter,
             UuidV7Generator ids,
             Clock clock) {
         this.workspaces = workspaces;
@@ -89,6 +98,7 @@ public class InvitationService {
         this.secretCipher = secretCipher;
         this.outbox = outbox;
         this.auditLog = auditLog;
+        this.rateLimiter = rateLimiter;
         this.ids = ids;
         this.clock = clock;
     }
@@ -102,6 +112,8 @@ public class InvitationService {
      * @throws WorkspaceNotFoundException if the workspace no longer exists
      * @throws InsufficientAuthorityException if the actor is no longer ADMIN or OWNER
      * @throws AlreadyMemberException if the address belongs to a member of the workspace
+     * @throws io.github.kaulinmindiola.warden.shared.web.ProblemException {@code rate-limited} if
+     *     the workspace or the inviter has used its daily quota of invitations
      */
     public InvitationView create(UUID workspaceId, UUID actorId, String rawEmail, String rawRole, String rawLocale) {
         Map<String, String> violations = new LinkedHashMap<>();
@@ -148,6 +160,12 @@ public class InvitationService {
                             .isPresent()) {
                 throw new AlreadyMemberException();
             }
+            rateLimiter
+                    .consume(RateLimitPolicy.INVITATIONS_PER_WORKSPACE, workspaceId.toString())
+                    .requireAllowed();
+            rateLimiter
+                    .consume(RateLimitPolicy.INVITATIONS_PER_INVITER, actorId.toString())
+                    .requireAllowed();
 
             for (Invitation previous : invitations.findByWorkspaceIdAndEmailAndStatus(
                     workspaceId, invitedEmail, InvitationStatus.PENDING)) {
