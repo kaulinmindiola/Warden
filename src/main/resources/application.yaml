@@ -43,6 +43,35 @@ warden:
     hmac-key: ${WARDEN_HMAC_KEY:}
     allow-ephemeral: false
 
+  # Rate limits (SRS DEC-005, DEC-028, DEC-031; ADR-014). Each limit is a token bucket of
+  # "capacity" requests refilled in full once per "window". These are the normative SRS values;
+  # every one can be overridden from the environment, e.g. WARDEN_RATELIMIT_LOGINPERIP_CAPACITY.
+  ratelimit:
+    login-failures-per-email:
+      capacity: 5
+      window: 15m
+    login-per-ip:
+      capacity: 20
+      window: 1m
+    password-reset-per-email:
+      capacity: 3
+      window: 1h
+    password-reset-per-ip:
+      capacity: 10
+      window: 1h
+    refresh-per-ip:
+      capacity: 60
+      window: 1m
+    verification-resend-per-account:
+      capacity: 3
+      window: 1h
+    invitations-per-workspace:
+      capacity: 50
+      window: 1d
+    invitations-per-inviter:
+      capacity: 100
+      window: 1d
+
 # One JSON object per log line, including traceId and spanId from the MDC (REQ-OBS-004, SDD V19).
 logging:
   structured:
