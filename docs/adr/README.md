@@ -111,7 +111,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Security control with exact numeric thresholds; window semantics must be justified (ASM-SDD-01).
 - **Affected elements:** V09, V14-A2, V17; REQ-SEC-006–009; REQ-FUNC-007, 033; REQ-REL-008; DEC-005, DEC-045.
 - **Baseline direction:** Bucket4j (Redis/Lettuce proxy + local buckets), HMAC-hashed keys, `check` before verification for login failures.
-- **Status:** PLANNED (after POC-001) · **Phase:** 3
+- **Status:** ACCEPTED — [ADR-014](ADR-014-rate-limiting.md) · **Phase:** 3
 
 ### ADR-015 — Delivery scheduling and claiming with leases
 - **Description:** How due deliveries are claimed, sent outside a long transaction and recovered after crashes.
