@@ -18,6 +18,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
+import java.sql.SQLTransientConnectionException;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -31,6 +32,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -138,6 +140,16 @@ class ProblemDetailsContractIT extends IntegrationTest {
     }
 
     @Test
+    @Verifies("REQ-REL-009")
+    void aDatabaseOutageIsServiceUnavailableWithRetryAfterAndNoInternals() throws Exception {
+        expectProblem(mockMvc.perform(get(BASE + "/database-unavailable")), ProblemType.SERVICE_UNAVAILABLE)
+                .andExpect(jsonPath("$.detail").value(ProblemType.SERVICE_UNAVAILABLE.defaultDetail()))
+                .andExpect(header().string("Retry-After", "5"))
+                .andExpect(content().string(not(containsString("HikariPool"))))
+                .andExpect(content().string(not(containsString("SQL"))));
+    }
+
+    @Test
     @Verifies("REQ-SEC-017")
     void anUnexpectedExceptionRevealsNoInternals() throws Exception {
         expectProblem(mockMvc.perform(get(BASE + "/boom")), ProblemType.INTERNAL_ERROR)
@@ -194,6 +206,14 @@ class ProblemDetailsContractIT extends IntegrationTest {
         @GetMapping("/retry-after")
         void retryAfter() {
             throw ProblemException.withRetryAfter(ProblemType.RATE_LIMITED, Duration.ofMillis(1500));
+        }
+
+        @GetMapping("/database-unavailable")
+        void databaseUnavailable() {
+            throw new CannotCreateTransactionException(
+                    "Could not open JPA EntityManager for transaction",
+                    new SQLTransientConnectionException(
+                            "HikariPool-1 - Connection is not available, request timed out after 2000ms"));
         }
     }
 

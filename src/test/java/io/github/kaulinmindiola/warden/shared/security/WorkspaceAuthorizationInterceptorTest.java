@@ -96,10 +96,14 @@ class WorkspaceAuthorizationInterceptorTest {
 
     @Test
     @Verifies("REQ-SEC-011")
-    void aLookupFailureGets503() {
+    void aLookupFailureGets503WithRetryAfter() {
         lookup.failure = new MembershipUnavailableException("database down");
 
-        assertProblem(ProblemType.SERVICE_UNAVAILABLE);
+        assertThatThrownBy(() -> interceptor.preHandle(request(WORKSPACE.toString()), response(), handler("member")))
+                .isInstanceOfSatisfying(ProblemException.class, problem -> {
+                    assertThat(problem.type()).isEqualTo(ProblemType.SERVICE_UNAVAILABLE);
+                    assertThat(problem.retryAfterSeconds()).hasValue(5L);
+                });
     }
 
     @Test

@@ -12,10 +12,15 @@ spring:
 
   # Runtime connections use the application role. It owns no table, so Row Level Security
   # applies to it (ADR-013, SDD V06). No default password: only the local profile has one.
+  # A connection that cannot be obtained within 2 s fails the request with 503 instead of making
+  # it wait (SDD V17, ADR-007). Hikari takes milliseconds; validation must be shorter.
   datasource:
     url: ${WARDEN_DB_URL:jdbc:postgresql://localhost:${WARDEN_DB_PORT:5432}/warden}
     username: ${WARDEN_DB_APP_USER:warden_app}
     password: ${WARDEN_DB_APP_PASSWORD:}
+    hikari:
+      connection-timeout: ${WARDEN_DB_CONNECTION_TIMEOUT_MS:2000}
+      validation-timeout: 1000
 
   # Migrations run at startup as the schema owner (REQ-INST-003); checksums of applied
   # migrations are validated on every start (REQ-CM-003).
@@ -83,6 +88,8 @@ logging:
       console: logstash
 
 # Actuator runs on a separate port that is never published outside the deployment network.
+# Readiness depends on PostgreSQL and on the application accepting traffic, never on Redis, whose
+# failure is degraded (REQ-AVAIL-001, SDD V17). Liveness reports only the application state.
 management:
   server:
     port: ${WARDEN_MANAGEMENT_PORT:8081}
@@ -90,3 +97,10 @@ management:
     web:
       exposure:
         include: health,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db

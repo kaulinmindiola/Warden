@@ -18,6 +18,9 @@ import java.util.OptionalLong;
  */
 public class ProblemException extends RuntimeException {
 
+    /** {@code Retry-After} of every 503 {@code service-unavailable} response (SDD V17). */
+    public static final Duration SERVICE_UNAVAILABLE_RETRY_AFTER = Duration.ofSeconds(5);
+
     private static final long serialVersionUID = 1L;
 
     private final ProblemType type;
@@ -58,6 +61,14 @@ public class ProblemException extends RuntimeException {
             throw new IllegalArgumentException("retryAfter must be positive");
         }
         return new ProblemException(type, type.defaultDetail(), List.of(), retryAfter);
+    }
+
+    /**
+     * 503 {@code service-unavailable} with {@code Retry-After: 5}: a dependency the request needs
+     * cannot answer, so the request is denied rather than answered without it (REQ-REL-009).
+     */
+    public static ProblemException serviceUnavailable() {
+        return withRetryAfter(ProblemType.SERVICE_UNAVAILABLE, SERVICE_UNAVAILABLE_RETRY_AFTER);
     }
 
     public ProblemType type() {

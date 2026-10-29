@@ -24,7 +24,7 @@ import org.springframework.web.servlet.HandlerMapping;
  *   <li>malformed workspace id, no membership, deleted workspace or unknown role → 404, the same
  *       response as a workspace that does not exist;
  *   <li>role below the required one → 403 {@code insufficient-role};
- *   <li>memberships cannot be read → 503;
+ *   <li>memberships cannot be read → 503 with {@code Retry-After: 5};
  *   <li>no authenticated caller → 401.
  * </ul>
  *
@@ -63,7 +63,7 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
                     .orElseThrow(() -> new ProblemException(ProblemType.NOT_FOUND));
         } catch (MembershipUnavailableException unavailable) {
             log.error("Workspace membership could not be resolved; the request is denied", unavailable);
-            throw new ProblemException(ProblemType.SERVICE_UNAVAILABLE);
+            throw ProblemException.serviceUnavailable();
         }
         if (!access.role().isAtLeast(required.value())) {
             throw new ProblemException(ProblemType.INSUFFICIENT_ROLE);
