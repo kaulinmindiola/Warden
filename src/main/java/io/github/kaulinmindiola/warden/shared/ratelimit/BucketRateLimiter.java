@@ -10,10 +10,12 @@ import java.time.Duration;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * {@link RateLimiter} on Bucket4j token buckets. The bucket of a request is identified by its
- * policy and the HMAC of its subject, so no e-mail address, IP or id reaches the store.
+ * policy and the HMAC of its subject, so no e-mail address, IP or id reaches the store. Where the
+ * buckets live, and what happens when Redis fails, is up to the {@link BucketSource}.
  *
  * <p>Every rejection, from {@code check} or {@code consume}, increments {@code
  * warden.ratelimit.rejections} tagged with the policy key (Prometheus: {@code
@@ -52,13 +54,13 @@ final class BucketRateLimiter implements RateLimiter {
 
     @Override
     public Decision check(RateLimitPolicy policy, String subject) {
-        EstimationProbe probe = bucketOf(policy, subject).estimateAbilityToConsume(1);
+        EstimationProbe probe = onBucket(policy, subject, bucket -> bucket.estimateAbilityToConsume(1));
         return probe.canBeConsumed() ? Decision.permit() : reject(policy, probe.getNanosToWaitForRefill());
     }
 
     @Override
     public Decision consume(RateLimitPolicy policy, String subject) {
-        ConsumptionProbe probe = bucketOf(policy, subject).tryConsumeAndReturnRemaining(1);
+        ConsumptionProbe probe = onBucket(policy, subject, bucket -> bucket.tryConsumeAndReturnRemaining(1));
         return probe.isConsumed() ? Decision.permit() : reject(policy, probe.getNanosToWaitForRefill());
     }
 
@@ -67,13 +69,13 @@ final class BucketRateLimiter implements RateLimiter {
         return KEY_PREFIX + policy.key() + ":" + hashedSubject;
     }
 
-    private Bucket bucketOf(RateLimitPolicy policy, String subject) {
+    private <T> T onBucket(RateLimitPolicy policy, String subject, Function<Bucket, T> operation) {
         Objects.requireNonNull(policy, "policy");
         Objects.requireNonNull(subject, "subject");
         if (subject.isBlank()) {
             throw new IllegalArgumentException("A rate limit subject must not be blank");
         }
-        return buckets.bucket(key(policy, keyedHasher.hmac(subject)), properties.limitFor(policy));
+        return buckets.apply(key(policy, keyedHasher.hmac(subject)), properties.limitFor(policy), operation);
     }
 
     private Decision reject(RateLimitPolicy policy, long nanosToWait) {

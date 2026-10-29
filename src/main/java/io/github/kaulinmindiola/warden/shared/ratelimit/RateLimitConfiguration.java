@@ -9,8 +9,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Provides the {@link RateLimiter}, backed by buckets in the Redis server of {@code
- * spring.data.redis.host} and {@code spring.data.redis.port}.
+ * Provides the {@link RateLimiter}: buckets in the Redis server of {@code spring.data.redis.host}
+ * and {@code spring.data.redis.port}, with instance-local buckets while Redis fails (REQ-REL-008).
  *
  * <p>The rate limiter uses its own Lettuce connection, with the short command timeout of {@code
  * warden.ratelimit.redis-command-timeout}, instead of the connection of Spring Data Redis.
@@ -29,11 +29,18 @@ public class RateLimitConfiguration {
     }
 
     @Bean
+    FailoverBucketSource rateLimitBuckets(
+            RedisBucketSource redisBucketSource, Clock clock, MeterRegistry meterRegistry) {
+        return new FailoverBucketSource(
+                redisBucketSource, new LocalBucketSource(new ClockTimeMeter(clock)), System::nanoTime, meterRegistry);
+    }
+
+    @Bean
     RateLimiter rateLimiter(
-            RedisBucketSource redisBucketSource,
+            FailoverBucketSource rateLimitBuckets,
             RateLimitProperties properties,
             KeyedHasher keyedHasher,
             MeterRegistry meterRegistry) {
-        return new BucketRateLimiter(redisBucketSource, properties, keyedHasher, meterRegistry);
+        return new BucketRateLimiter(rateLimitBuckets, properties, keyedHasher, meterRegistry);
     }
 }
