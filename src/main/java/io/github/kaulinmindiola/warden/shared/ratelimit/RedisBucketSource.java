@@ -6,8 +6,11 @@ import io.github.bucket4j.TimeMeter;
 import io.github.bucket4j.distributed.ExpirationAfterWriteStrategy;
 import io.github.bucket4j.distributed.proxy.ProxyManager;
 import io.github.bucket4j.redis.lettuce.Bucket4jLettuce;
+import io.lettuce.core.ClientOptions;
 import io.lettuce.core.RedisClient;
 import io.lettuce.core.RedisURI;
+import io.lettuce.core.SocketOptions;
+import io.lettuce.core.TimeoutOptions;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.codec.ByteArrayCodec;
 import io.lettuce.core.codec.RedisCodec;
@@ -21,8 +24,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * instance (SDD V06, V16).
  *
  * <p>The connection is opened on first use, not at startup: the application must start and stay
- * ready while Redis is down (REQ-AVAIL-001), and step 3.5 adds local buckets for that case. Until
- * then a Redis failure propagates to the caller. Once open, Lettuce reconnects on its own.
+ * ready while Redis is down (REQ-AVAIL-001). A Redis failure propagates to the caller, and {@link
+ * FailoverBucketSource} answers it from local buckets. Every command, the asynchronous ones of the
+ * proxy included, fails at the command timeout; opening a connection fails after {@link
+ * #CONNECT_TIMEOUT}. Once open, Lettuce reconnects on its own.
  *
  * <p>Each key expires when its bucket would be full again, plus {@link #KEEP_AFTER_REFILL}, so
  * Redis only holds buckets that still limit something.
@@ -31,6 +36,9 @@ final class RedisBucketSource implements BucketSource, AutoCloseable {
 
     /** Extra time a key lives after its bucket would be full again. */
     static final Duration KEEP_AFTER_REFILL = Duration.ofSeconds(10);
+
+    /** Maximum time to open the TCP connection to Redis. */
+    static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(1);
 
     private final RedisClient client;
     private final TimeMeter timeMeter;
@@ -49,7 +57,13 @@ final class RedisBucketSource implements BucketSource, AutoCloseable {
     static RedisBucketSource create(String host, int port, Duration commandTimeout, TimeMeter timeMeter) {
         RedisURI uri =
                 RedisURI.Builder.redis(host, port).withTimeout(commandTimeout).build();
-        return new RedisBucketSource(RedisClient.create(uri), timeMeter);
+        RedisClient client = RedisClient.create(uri);
+        client.setOptions(ClientOptions.builder()
+                .socketOptions(
+                        SocketOptions.builder().connectTimeout(CONNECT_TIMEOUT).build())
+                .timeoutOptions(TimeoutOptions.enabled())
+                .build());
+        return new RedisBucketSource(client, timeMeter);
     }
 
     @Override
