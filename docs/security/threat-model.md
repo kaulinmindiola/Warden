@@ -1,10 +1,10 @@
 # Threat model
 
-- Version: 1 (milestone M2, `v0.3.0`)
-- Date: 2026-10-28
-- Scope: authentication and sessions, the `iam` module and the `shared` security kernel (v0); workspaces, roles, invitations, notes and tenant isolation (v1)
+- Version: 2 (milestone M3, `v0.4.0`)
+- Date: 2026-10-30
+- Scope: authentication and sessions, the `iam` module and the `shared` security kernel (v0); workspaces, roles, invitations, notes and tenant isolation (v1); abuse protection, degraded modes, audit retention and transport security (v2)
 - Method: STRIDE per element; each threat is traced to its misuse case (MUC), requirement and test
-- Next revision: milestone M3 (abuse protection and degraded modes)
+- Next revision: milestone M4 (notifications and e-mail delivery)
 
 ## System under analysis
 
@@ -12,7 +12,7 @@
 flowchart LR
     C["API client"] -->|HTTPS, Bearer token| A["Warden API /api/v1"]
     A -->|SQL as warden_app| P[("PostgreSQL 17")]
-    A -->|revoked sessions| R[("Redis 8")]
+    A -->|revoked sessions, rate-limit buckets| R[("Redis 8")]
     A -->|sealed link tokens| O[("outbox_event")]
     O -.->|phase 4| N["notification module, then e-mail providers"]
 ```
@@ -26,8 +26,9 @@ flowchart LR
 | `workspace`, `workspace_member`, `note`, `invitation` | Tenant data, roles, invitation token hashes | Database; all but `workspace` under forced Row Level Security keyed by transaction-local settings (`app.workspace_id`, `app.user_id`, `app.invitation_token_hash`) |
 | `outbox_event` | Event payloads with recipient data and AES-256-GCM sealed link tokens | Database; read by the notification module in phase 4 |
 | `audit_log` | Security-relevant actions with `traceId` | Database; the runtime role cannot update, delete or truncate |
-| Redis | Revoked session ids with a 630 s TTL | Ephemeral; PostgreSQL stays authoritative |
-| Key material | ES256 signing key, AES-256 key ring, HMAC key | Environment variables; never in the repository |
+| Redis | Revoked session ids with a 630 s TTL; rate-limit buckets keyed by policy and HMAC of the subject | Ephemeral; PostgreSQL stays authoritative. When Redis fails, revocation checks fall back to PostgreSQL and rate limits to buckets local to the instance (ADR-007, ADR-014) |
+| Management port | Health, readiness and Prometheus metrics | Plain HTTP, never published outside the deployment network |
+| Key material and TLS keystore | ES256 signing key, AES-256 key ring, HMAC key, server certificate | Environment variables; never in the repository. The `prod-like` profile refuses to start without them |
 
 ## Threats
 
@@ -45,16 +46,17 @@ risk recorded).
 | S-04 | Replay of a verification or password reset link | Single use, conditional consumption, expiry (24 h / 30 min), a new link invalidates the previous one | MUC-06 | REQ-FUNC-006, 007, 019, 021, BR-006 | `EmailVerificationIT`, `ResendVerificationIT`, `PasswordResetIT` | Mitigated |
 | S-05 | Guessing a link or refresh token | 256-bit random tokens from `SecureRandom`; only their hashes are stored | MUC-02, MUC-06 | REQ-SEC-004 | `SecureTokenGeneratorTest` | Mitigated |
 | S-06 | A token from one purpose used for another (verification token on reset) | Consumption filters by purpose; refresh and link tokens have distinct prefixes | MUC-06 | REQ-FUNC-021 | `PasswordResetIT.unknownUsedWrongPurposeAndMalformedTokensGetTheSameResponseAndChangeNothing` | Mitigated |
-| S-07 | Brute force and credential stuffing on login | Argon2id slows each guess; per-account and per-IP limits | MUC-03 | REQ-SEC-006, 007 | — | Open (rate limiting, phase 3) |
+| S-07 | Brute force and credential stuffing on login | Argon2id slows each guess; after 5 failures in 15 min an e-mail is rejected before Argon2 runs, even with the right password, and an IP gets 20 logins per minute (ADR-014); limits keep holding with local buckets when Redis fails | MUC-03 | REQ-SEC-006, 007, REQ-REL-008 | `IamRateLimitIT`, `RateLimitFallbackIT` | Mitigated |
 | S-08 | Accepting an invitation sent to someone else (forwarded or intercepted link) | The caller's e-mail must be verified and equal to the invited one; otherwise 403 without consuming the token, audited as a failure | MUC-06 | REQ-FUNC-036, BR-009 | `AcceptInvitationIT.anotherOrAnUnverifiedAccountGets403AndTheTokenStaysUsable` | Mitigated |
 | S-09 | Replay of an invitation link: used, revoked, replaced, expired or of a deleted workspace | Conditional update on a pending, unexpired row under the workspace lock; re-inviting replaces, deleting revokes; every case gets the same 400 | MUC-06 | REQ-FUNC-032, 035, 036, BR-006 | `AcceptInvitationIT.unknownUsedExpiredRevokedReplacedAndDeletedWorkspaceTokensGetTheSameResponse` | Mitigated |
+| S-10 | Guessing refresh tokens at volume | 60 refreshes per IP per minute on top of 256-bit tokens | MUC-02 | REQ-SEC-009 | `IamRateLimitIT` | Mitigated |
 
 ### Tampering
 
 | ID | Threat | Control | MUC | Requirement | Test | Status |
 |----|--------|---------|-----|-------------|------|--------|
 | T-01 | Altering a sealed link token, its key id or its expiry in the outbox | AES-256-GCM with key id and expiry as associated data (ADR-011) | MUC-06 | REQ-SEC-005 | `SecretCipherTest` (altered ciphertext, extended expiry, relabelled key) | Mitigated |
-| T-02 | Altering or deleting audit records through the application | `UPDATE`, `DELETE` and `TRUNCATE` revoked from the runtime role | — | REQ-SEC-016 | `AuditLogIT.theApplicationRoleCannotModifyOrDeleteAuditRecords` | Mitigated |
+| T-02 | Altering or deleting audit records through the application, including a compromised application purging recent history | `UPDATE`, `DELETE` and `TRUNCATE` revoked from the runtime role; the only deletion path is `purge_audit_log(cutoff)`, a `SECURITY DEFINER` function executable only by `warden_app` that never deletes a record younger than 365 days by the database clock | — | REQ-SEC-016 | `AuditLogIT.theApplicationRoleCannotModifyOrDeleteAuditRecords`, `AuditRetentionIT` | Mitigated |
 | T-03 | Changing the password of an account without owning its e-mail | Reset requires a single-use token sent to the e-mail; the policy is enforced again | MUC-06 | REQ-FUNC-020, 021 | `PasswordResetIT` | Mitigated |
 | T-04 | An invitation holder escalating the invited role, or rewriting another invitation, through SQL | Acceptance runs in a token-holder context (`forInvitationHolder`, a refinement of the `forUser` context of SDD V14): Row Level Security exposes only the row of that token hash and lets it change only to `ACCEPTED`; the runtime role may update only `invitation.status` and cannot delete invitations | MUC-05 | REQ-SEC-012, BR-008 | `InvitationRowLevelSecurityIT`, `TenantTransactionsIT` | Mitigated |
 | T-05 | Lost update when two members edit the same note | Optimistic version; a stale edit gets 409 `version-conflict` | — | REQ-FUNC-045 | `ConcurrentNoteEditIT` (50 repetitions) | Mitigated |
@@ -64,7 +66,7 @@ risk recorded).
 
 | ID | Threat | Control | MUC | Requirement | Test | Status |
 |----|--------|---------|-----|-------------|------|--------|
-| R-01 | A user or attacker denies a login, logout, session termination, refresh reuse, password reset or a workspace action (creation, role change, removal, leave, invitation, acceptance, deletion) | Audit record with actor, action, outcome and `traceId`; failures recorded even when the transaction rolls back; refused invitation acceptances recorded as failures | — | REQ-SEC-015 | `AuditLogIT`, `SessionManagementIT`, `RefreshReuseAndExpiryIT`, `PasswordResetIT`, `InvitationIT`, `AcceptInvitationIT`, `WorkspaceDeletionIT` | Partial (one-record-per-action sweep and retention pending) |
+| R-01 | A user or attacker denies a login, logout, session termination, refresh reuse, password reset or a workspace action (creation, role change, removal, leave, invitation, acceptance, deletion) | Audit record with actor, action, outcome and `traceId`; failures recorded even when the transaction rolls back; refused invitation acceptances recorded as failures; records kept 365 days | — | REQ-SEC-015, 016 | `AuditCompletenessIT` (exactly one complete record without secrets for each of the 13 existing actions), `AuditLogIT`, `AuditRetentionIT` | Mitigated for every existing action; template changes and dead-letter retries are audited when they arrive (phase 4) |
 
 ### Information disclosure
 
@@ -83,6 +85,8 @@ risk recorded).
 | I-11 | Workspace existence revealed to non-members, or a deleted workspace still reachable | Non-member, foreign and deleted workspaces answer exactly like a random id (ADR-004, BR-012) | MUC-01 | REQ-FUNC-023, 026 | `IsolationSuiteIT` (foreign and deleted cases on every endpoint) | Mitigated |
 | I-12 | Invitation tokens exposed through the API | Only the SHA-256 is stored; creation and listing responses never contain the token or its hash; it travels only sealed in `workspace.MemberInvited` | MUC-06 | REQ-FUNC-034, REQ-SEC-004, 005 | `InvitationIT` | Mitigated |
 | I-13 | A VIEWER reads the e-mail addresses of the other members (RISK-010) | Accepted by design: member listing shows e-mails to every member | — | REQ-FUNC-037 | `WorkspaceMembersIT` | Accepted |
+| I-14 | A response leaks a password, a stored hash, a one-time token or a token it did not issue | Responses never carry secrets; a scan of every response of a flow that issues every kind of secret, and of every read endpoint, searches plain values and hashes in hexadecimal and Base64; a gate fails the build when a read endpoint is not scanned (FF-10) | MUC-02, MUC-06 | REQ-SEC-014 | `SecretsInResponsesIT` | Mitigated (rendered notification content arrives in phase 4) |
+| I-15 | Tokens and passwords intercepted in transit, or a downgrade to plain HTTP | The `prod-like` profile has a TLS-only connector (TLS 1.3 and 1.2), sends `Strict-Transport-Security` for one year with subdomains and does not start without its keystore; the local profile uses HTTP by design (CON-009) | MUC-02 | REQ-SEC-019 | `ProdLikeProfileIT` | Mitigated |
 
 ### Denial of service
 
@@ -90,9 +94,11 @@ risk recorded).
 |----|--------|---------|-----|-------------|------|--------|
 | D-01 | Memory exhaustion through many concurrent Argon2 computations | Fair semaphore of 4 permits around hashing (ADR-010) | MUC-03 | REQ-SEC-003 | `BoundedPasswordHasherTest.neverRunsMoreHashesAtOnceThanAllowed` | Mitigated |
 | D-02 | Oversized request bodies | 64 KiB limit before deserialization | — | REQ-SEC-018 | `ApiConventionsIT` | Mitigated |
-| D-03 | Redis unavailable makes revocation fail open | The validator falls back to PostgreSQL when Redis cannot answer | — | REQ-REL-007 | `RevocationFallbackIT` | Partial (503 when both stores fail and reconciliation, phase 3) |
-| D-04 | Using Warden to flood an inbox with verification or reset e-mails | Per-account and per-e-mail limits on resend and forgot-password | MUC-07 | REQ-FUNC-007, REQ-SEC-008 | — | Open (rate limiting, phase 3) |
-| D-05 | Using invitations to send spam, including across several workspaces | 50 invitations per workspace and 100 per inviting user per day | MUC-07 | REQ-FUNC-033 | — | Open (rate limiting, phase 3) |
+| D-03 | Redis unavailable makes revocation fail open, or sessions revoked during the outage come back when Redis returns | The first Redis error puts the instance in degraded mode and revocation checks go to PostgreSQL; on recovery the revocations of the last 630 s are rewritten before leaving degraded mode, and healthy instances reconcile every 30 s (ADR-007) | MUC-02 | REQ-REL-007 | `RevocationDegradationIT` (Redis frozen), `RevocationReconcilerTest`, `RedisRevocationStoreTest` | Mitigated |
+| D-04 | Using Warden to flood an inbox with verification or reset e-mails | 3 resends per account per hour; 3 reset requests per e-mail and 10 per IP per hour, identical for unknown e-mails (ADR-014) | MUC-07 | REQ-FUNC-007, REQ-SEC-008 | `IamRateLimitIT` | Mitigated |
+| D-05 | Using invitations to send spam, including across several workspaces | 50 invitations per workspace and 100 per inviting user per day, spent only by invitations that would be sent | MUC-07 | REQ-FUNC-033 | `InvitationRateLimitIT` | Mitigated |
+| D-06 | A Redis outage turns the rate limits off, or blocks the limited endpoints | Buckets local to the instance with the same policies while Redis fails; one retry of Redis every 5 s (ADR-014) | MUC-03 | REQ-REL-008 | `RateLimitFallbackIT` (Redis frozen), `FailoverBucketSourceTest`, `LocalBucketSourceTest` | Mitigated (limit multiplied by the number of instances, RISK-012) |
+| D-07 | A PostgreSQL outage hangs every request, or requests are answered without the source of truth | Connections time out after 2 s; failures become 503 `service-unavailable` with `Retry-After: 5` in the controllers, the authorization interceptor and the filter chain; readiness goes DOWN only for PostgreSQL | — | REQ-REL-007, 009, REQ-AVAIL-001 | `DependencyOutageIT` (PostgreSQL and Redis frozen), `DatabaseUnavailableTest`, `ProblemDetailsContractIT` | Mitigated |
 
 ### Elevation of privilege
 
@@ -105,7 +111,7 @@ risk recorded).
 | E-05 | A role below the minimum calling a privileged workspace endpoint | Every workspace handler declares `@RequiresWorkspaceRole` (FF-05); 403 `insufficient-role` | MUC-05 | REQ-FUNC-024 | `RoleMatrixIT` (14 endpoints × 4 roles), `WorkspaceEndpointRulesIT` | Mitigated |
 | E-06 | An ADMIN granting OWNER, changing or removing an OWNER, or inviting with OWNER | Authority rules re-checked under the workspace lock; OWNER is not invitable (database `CHECK` too) | MUC-05 | REQ-FUNC-031, 038, 041, BR-002, BR-008 | `MemberRoleIT`, `MemberRemovalIT`, `InvitationIT` | Mitigated |
 | E-07 | A new workspace endpoint shipped without isolation coverage | R7: the build fails when a workspace handler is missing from the isolation registry; registered endpoints inherit the foreign and deleted workspace cases and the role matrix | MUC-01 | REQ-MAINT-003 | `WorkspaceEndpointRulesIT`; failing CI shown on PR #18 | Mitigated |
-| E-08 | A failing membership lookup or an unknown stored role grants access | Fail closed: lookup errors give 503, an unknown role means no access (404) and is logged | MUC-01 | REQ-SEC-011 | `WorkspaceAuthorizationInterceptorTest`, `WorkspaceMembershipLookupTest` | Partial (fault injection with PostgreSQL down, phase 3) |
+| E-08 | A failing membership lookup, an unknown stored role or an unresolvable workspace grants access | Fail closed: lookup errors give 503 with `Retry-After`, an unknown role or a malformed workspace id answers the same 404 as a non-member and the unknown role is logged | MUC-01 | REQ-SEC-011 | `FailClosedAuthorizationIT` (each fault on every registered endpoint, as an OWNER), `DependencyOutageIT`, `WorkspaceAuthorizationInterceptorTest` | Mitigated |
 
 ## Residual and accepted risks
 
@@ -113,7 +119,11 @@ risk recorded).
 |----|------|----------|
 | RISK-008 | A client that retries a refresh with the same token after a timeout loses its session | Accepted and documented in ADR-006: clients must not retry a refresh with the same token |
 | RISK-010 | A VIEWER can see the e-mail addresses of the other members | Accepted in the SRS (I-13) |
-| RISK-012 | Without Redis, rate limits are per instance | Accepted for release 1.0 (REQ-REL-008); applies from phase 3 |
+| RISK-012 | Without Redis, rate limits are per instance, and counts made locally are not copied back when Redis returns, so a subject can get one extra window's budget | Accepted for release 1.0 (REQ-REL-008, ADR-014) |
+| DRISK-01 | A Redis write lost on one instance lets a revoked session through the other, healthy instances | Accepted: bounded to 30 s by the periodic reconciliation (ADR-007) |
+| — | During a Redis outage the local buckets grow with the distinct subjects of one window; there is no hard cap | Accepted: idle buckets are dropped once a window has passed; the per-IP limits bound one source |
+| — | A query on a pooled connection to a PostgreSQL that stops answering without closing the connection waits on the TCP stack | Accepted (ADR-007): Hikari validates connections idle for more than 500 ms; revisited after the load test |
+| — | The management port serves health and metrics over plain HTTP | Accepted: it is never published outside the deployment network |
 | — | Ephemeral keys in the local profile invalidate tokens and sealed secrets on restart | Accepted for local development only; the `prod-like` profile refuses them (REQ-INST-002) |
 | — | The response floor adds at least 250 ms to registration and password reset requests | Accepted (ADR-019); these endpoints are outside the REQ-PERF-001 latency targets or account for the floor |
 | — | The token-holder policy trusts the token hash: someone able to read `invitation.token_hash` could act as holder at SQL level | Accepted: that requires database access, which already exposes all tenant data; the API never returns hashes |
@@ -121,8 +131,6 @@ risk recorded).
 
 ## Open items for the next revision
 
-- S-07, D-04 and D-05: rate limiting, including the invitation limits (phase 3).
 - I-02: REQ-SEC-010 analysis and calibration of the response floor.
-- D-03 and E-08: behaviour with Redis and PostgreSQL unavailable, denylist reconciliation and fault injection for the membership lookup (phase 3).
-- R-01: one-record-per-action sweep of REQ-SEC-015 and audit retention (REQ-SEC-016).
-- Cancellation of deliveries of revoked or replaced invitations and of deleted workspaces (REQ-FUNC-030, 032, 035, 062): phase 4.
+- I-06: scan of the logs for secrets (phase 5).
+- Phase 4: templates without execution (REQ-SEC-013); audit records for template changes and dead-letter retries (REQ-SEC-015); rendered notification content in the response scan (REQ-SEC-014); deletion of sealed tokens after delivery (REQ-SEC-005); cancellation of deliveries of revoked or replaced invitations and of deleted workspaces (REQ-FUNC-030, 032, 035, 062).
