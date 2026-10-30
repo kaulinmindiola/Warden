@@ -54,9 +54,9 @@ Example:
 | `delivery-not-retryable` | 409 | Delivery not retryable | Reprocessing a delivery that is not `DEAD` |
 | `payload-too-large` | 413 | Payload too large | Request body larger than 64 KiB |
 | `unsupported-media-type` | 415 | Unsupported media type | The request `Content-Type` is not supported |
-| `rate-limited` | 429 | Too many requests | Any rate limit; includes `Retry-After` |
+| `rate-limited` | 429 | Too many requests | A limit on login, refresh, password recovery, verification resend or invitations was reached; includes `Retry-After` |
 | `internal-error` | 500 | Internal error | Unexpected error; generic detail, logged with the `traceId` |
-| `service-unavailable` | 503 | Service unavailable | PostgreSQL unavailable, or Redis and PostgreSQL unavailable; includes `Retry-After` |
+| `service-unavailable` | 503 | Service unavailable | PostgreSQL unavailable, alone or with Redis, or workspace memberships cannot be read; includes `Retry-After: 5` |
 
 `method-not-allowed`, `not-acceptable` and `unsupported-media-type` are protocol-level types
 produced by the web framework; they extend the catalogue of SDD V08 so that every 4xx response

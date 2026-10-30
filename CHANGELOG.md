@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-30
+
+Milestone M3: abuse protection and degradation. The sensitive endpoints are rate limited, Redis
+and PostgreSQL failures have a defined, tested behaviour, and the hardening requirements hold.
+
+### Added
+
+- Rate limits with the SRS thresholds on Bucket4j token buckets refilled in full once per window:
+  5 failed logins per e-mail in 15 minutes (checked before Argon2, so even the right password is
+  rejected), 20 logins and 60 refreshes per IP per minute, 3 reset requests per e-mail and 10 per
+  IP per hour, 3 verification resends per account per hour, and 50 invitations per workspace and
+  100 per inviter per day. Rejections answer 429 `rate-limited` with `Retry-After`, never reveal
+  whether an e-mail has an account and are counted in `warden_ratelimit_rejections_total`.
+- Degraded modes: with Redis down, revocation checks go to PostgreSQL and the revocations of the
+  last 630 seconds are rewritten before leaving degraded mode, with a reconciliation every 30
+  seconds; rate limits use buckets local to the instance. Gauges `warden_revocation_degraded` and
+  `warden_ratelimit_degraded`.
+- PostgreSQL unavailable: connections time out after 2 seconds and every request that needs the
+  database answers 503 `service-unavailable` with `Retry-After: 5`, including the token check when
+  Redis is down too; readiness depends only on PostgreSQL and the application state.
+- Audit retention: `purge_audit_log`, the only way to delete audit records, never deletes one
+  younger than 365 days; a daily job runs it.
+- The `prod-like` profile: TLS-only connector, `Strict-Transport-Security` for one year, and
+  mandatory keystore and keys.
+- Evidence tests: fail-closed authorization with each fault injected on every workspace endpoint,
+  one complete audit record without secrets per audited action, a scan of API responses for
+  secrets with a gate on every read endpoint, and outage tests with the Redis and PostgreSQL
+  containers frozen.
+- Threat model v2 covering abuse protection, degraded modes, audit retention and transport.
+- ADR-007 and ADR-014 accepted.
+
+### Changed
+
+- Redis commands time out after 200 ms instead of 60 s.
+- The workspace authorization interceptor answers 503 with `Retry-After: 5` when memberships cannot
+  be read.
+- Integration test pools keep one idle connection, and the test PostgreSQL allows 300 connections.
+
+### Known limitations
+
+- Audit records for template changes and dead-letter retries (REQ-SEC-015), templates without
+  execution (REQ-SEC-013) and rendered notification content in the response scan (REQ-SEC-014)
+  arrive with the notification module in M4; they are recorded as exceptions to the M3 exit
+  criteria.
+- The REQ-SEC-010 timing analysis is pending; only its mechanism is in place.
+
 ## [0.3.0] - 2026-10-28
 
 Milestone M2: multi-tenancy and RBAC. Workspaces, memberships, roles, invitations and notes work
@@ -93,7 +139,8 @@ No API endpoint is implemented yet.
 - POC-002: tenant context does not leak across pooled database connections.
 - ADR-001, ADR-013 and ADR-020 accepted; ADR-005 proposed.
 
-[Unreleased]: https://github.com/kaulinmindiola/warden/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kaulinmindiola/warden/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/kaulinmindiola/warden/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kaulinmindiola/warden/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kaulinmindiola/warden/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/kaulinmindiola/warden/releases/tag/v0.1.0

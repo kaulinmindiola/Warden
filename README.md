@@ -6,7 +6,7 @@ reuse detection, and reliable e-mail delivery.
 
 ## Status
 
-🚧 Early development. Milestone **M2 — multi-tenancy and RBAC** (`v0.3.0`) is complete:
+🚧 Early development. Milestone **M3 — abuse protection and degradation** (`v0.4.0`) is complete:
 
 - Identity core (M1): registration, e-mail verification, login, sessions, refresh-token rotation
   with reuse detection, logout, session termination and password reset, all without revealing
@@ -16,13 +16,17 @@ reuse detection, and reliable e-mail delivery.
 - Tenant isolation in three layers: authorization against the current membership on every
   request, a Hibernate tenant filter and forced PostgreSQL Row Level Security. A non-member cannot
   tell a foreign or deleted workspace from a non-existent one.
+- Abuse protection (M3): rate limits on login, refresh, password recovery, verification resend
+  and invitations, enforced with buckets local to the instance when Redis fails. A Redis outage
+  keeps revocation working through PostgreSQL; a PostgreSQL outage answers 503 and never grants
+  access. Audit records are complete and kept 365 days, no response carries a secret, and the
+  `prod-like` profile serves HTTPS only with HSTS.
 - `./mvnw verify` runs formatting, version, architecture, unit and integration checks against
   real PostgreSQL 17 and Redis 8, fails below 80 % line coverage of the domain and application
   layers, and fails if a workspace endpoint is missing from the isolation suite or does not
   declare its minimum role.
 
-Abuse protection and degraded modes come next (M3). Notifications are recorded in the outbox but
-not yet delivered by e-mail (M4).
+Notifications are recorded in the outbox but not yet delivered by e-mail; they come next (M4).
 
 ## Run locally
 
@@ -106,6 +110,8 @@ Run the full build, including the integration tests on Testcontainers (Docker mu
 
 Roles are ordered VIEWER < MEMBER < ADMIN < OWNER; a role grants everything the lower ones do.
 For non-members, workspace routes answer 404 exactly as for a workspace that does not exist.
+Login, refresh, password recovery, verification resend and invitations are rate limited: past
+the limit they answer 429 with `Retry-After`.
 Errors follow RFC 9457; the types are listed in [problem-types.md](docs/api/problem-types.md).
 
 ## Documentation

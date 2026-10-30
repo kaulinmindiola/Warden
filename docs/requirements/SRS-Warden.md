@@ -1580,7 +1580,7 @@ N/A — Warden does not incorporate machine learning models or data-driven compo
 | REQ-FUNC-004 | Test | [EmailAddressTest](../../src/test/java/io/github/kaulinmindiola/warden/iam/domain/EmailAddressTest.java) | Passed | Trimmed, lower-cased e-mails map to one account (RegistrationIT); unique constraint proven in AccountPersistenceIT |
 | REQ-FUNC-005 | Test | [EmailVerificationIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/EmailVerificationIT.java) | Passed | One verification event per registration; the token is valid at 24 h - 1 s and rejected at 24 h + 1 s with MutableClock; delivery verified at the outbox event |
 | REQ-FUNC-006 | Test | [EmailVerificationIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/EmailVerificationIT.java) | Passed | A valid token verifies the e-mail once; used, unknown, expired and malformed tokens get an identical 400 |
-| REQ-FUNC-007 | Test | [ResendVerificationIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/ResendVerificationIT.java) | Partial | Resend invalidates the previous link and the new one verifies; 409 when already verified. The 429 after 3 requests per hour arrives with rate limiting in phase 3 |
+| REQ-FUNC-007 | Test | [ResendVerificationIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/ResendVerificationIT.java) | Passed | Resend invalidates the previous link and the new one verifies; 409 when already verified; the 4th resend within one hour gets 429 with `Retry-After` (IamRateLimitIT) |
 | REQ-FUNC-008 | Test | [LoginIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/LoginIT.java) | Passed | 200 with both tokens; two logins create two distinct sessions listed by REQ-FUNC-016; an unverified e-mail can log in |
 | REQ-FUNC-009 | Test | [LoginIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/LoginIT.java) | Passed | Unknown e-mail and wrong password get an identical 401; the unknown e-mail is verified against a dummy Argon2 hash (ADR-019) |
 | REQ-FUNC-010 | Test | TBD | Pending | — |
@@ -1606,7 +1606,7 @@ N/A — Warden does not incorporate machine learning models or data-driven compo
 | REQ-FUNC-030 | Test | [WorkspaceDeletionIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/WorkspaceDeletionIT.java) | Passed | Pending invitations become REVOKED and a previously valid token gets the unknown-token 400; workspace.WorkspaceDeleted is verified as an outbox event (D-03); delivery cancellation is re-verified in phase 4 |
 | REQ-FUNC-031 | Test | [InvitationIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/InvitationIT.java) | Passed | An ADMIN gets 201 and a workspace.MemberInvited event with the token sealed (delivery at outbox level, D-03); role OWNER gets 400; a current member 409; a MEMBER 403 (RoleMatrixIT) |
 | REQ-FUNC-032 | Test | [InvitationIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/InvitationIT.java) | Passed | Re-inviting replaces the pending invitation, even an expired one, with InvitationRevoked(REPLACED); the previous token gets the unknown-token 400 (AcceptInvitationIT); delivery cancellation in phase 4 |
-| REQ-FUNC-033 | Test | TBD | Pending | — |
+| REQ-FUNC-033 | Test | [InvitationRateLimitIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/InvitationRateLimitIT.java) | Passed | The 51st invitation of a workspace in one day and the 101st of one inviter across workspaces get 429; rejected requests spend nothing |
 | REQ-FUNC-034 | Test | [InvitationIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/InvitationIT.java) | Passed | Only pending, unexpired invitations are listed, newest first; no response contains the token or its hash |
 | REQ-FUNC-035 | Test | [InvitationIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/InvitationIT.java) | Passed | Revoking returns 204 with InvitationRevoked(REVOKED) and the token then gets the unknown-token 400 (AcceptInvitationIT); accepted, revoked, replaced or expired invitations get 409; delivery cancellation in phase 4 |
 | REQ-FUNC-036 | Test | [AcceptInvitationIT](../../src/test/java/io/github/kaulinmindiola/warden/workspace/web/AcceptInvitationIT.java) | Passed | 200 with the invited role; a different or unverified e-mail gets 403 without consuming the token, which then works from the invited account; unknown, malformed, used, expired, revoked, replaced and deleted-workspace tokens get an identical 400; a member gets 409 with no role change |
@@ -1647,30 +1647,30 @@ N/A — Warden does not incorporate machine learning models or data-driven compo
 | REQ-SEC-003 | Inspection | [Argon2Properties](../../src/main/java/io/github/kaulinmindiola/warden/iam/infrastructure/Argon2Properties.java) | Passed | Argon2id with 19 MiB, 2 iterations and parallelism 1 by default, configurable; LoginIT proves the rehash on the next login |
 | REQ-SEC-004 | Test | [SecretsAtRestIT](../../src/test/java/io/github/kaulinmindiola/warden/SecretsAtRestIT.java) | Passed | After every token-issuing flow, 12 issued secrets appear in no text, varchar, jsonb or bytea column; 256-bit tokens in SecureTokenGeneratorTest |
 | REQ-SEC-005 | Test | [SecretsAtRestIT](../../src/test/java/io/github/kaulinmindiola/warden/SecretsAtRestIT.java) | Partial | Outbox link tokens are stored only sealed with AES-256-GCM (SecretCipherTest). Deleting them once a delivery is `SENT` arrives in phase 4 |
-| REQ-SEC-006 | Test | TBD | Pending | — |
-| REQ-SEC-007 | Test | TBD | Pending | — |
-| REQ-SEC-008 | Test | TBD | Pending | — |
-| REQ-SEC-009 | Test | TBD | Pending | — |
+| REQ-SEC-006 | Test | [IamRateLimitIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/IamRateLimitIT.java) | Passed | After 5 failures in 15 min the 6th login gets 429 even with the right password, identically for unknown e-mails; admitted again once the window has passed |
+| REQ-SEC-007 | Test | [IamRateLimitIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/IamRateLimitIT.java) | Passed | The 21st login from one IP within a minute gets 429, whatever the result |
+| REQ-SEC-008 | Test | [IamRateLimitIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/IamRateLimitIT.java) | Passed | The 4th reset request for an e-mail and the 11th from an IP within one hour get 429, also for unknown e-mails |
+| REQ-SEC-009 | Test | [IamRateLimitIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/IamRateLimitIT.java) | Passed | The 61st refresh from one IP within a minute gets 429 |
 | REQ-SEC-010 | Analysis | [ADR-019](../adr/ADR-019-response-time-equalization.md) | Partial | Mechanism in place: dummy Argon2 hash for login and a 250 ms response floor for register and forgot (ResponseFloorIT). The statistical analysis is pending |
-| REQ-SEC-011 | Test | TBD | Pending | — |
+| REQ-SEC-011 | Test | [FailClosedAuthorizationIT](../../src/test/java/io/github/kaulinmindiola/warden/isolation/FailClosedAuthorizationIT.java) | Passed | On every registered workspace endpoint, an OWNER is denied when the membership query fails (503), the stored role is unknown (404 as a non-member, logged) or the workspace id cannot be resolved (404); also DependencyOutageIT with PostgreSQL down |
 | REQ-SEC-012 | Test | [NoteRowLevelSecurityIT](../../src/test/java/io/github/kaulinmindiola/warden/notes/infrastructure/NoteRowLevelSecurityIT.java) | Passed | Raw JDBC as warden_app without application filters: with the context of W no row of X is read or modified and without context nothing is visible; the same for invitations, where the token-holder context sees one row and may only accept it (InvitationRowLevelSecurityIT) |
-| REQ-SEC-013 | Test | TBD | Pending | — |
-| REQ-SEC-014 | Test | TBD | Pending | — |
-| REQ-SEC-015 | Test | TBD | Pending | — |
-| REQ-SEC-016 | Inspection | TBD | Pending | — |
+| REQ-SEC-013 | Test | TBD | Pending | Templates arrive in phase 4 (REQ-FUNC-052 to 054); recorded as an exception to the M3 exit criteria |
+| REQ-SEC-014 | Test | [SecretsInResponsesIT](../../src/test/java/io/github/kaulinmindiola/warden/SecretsInResponsesIT.java) | Passed | Every read endpoint and every response of a flow that issues every kind of secret contain no password, stored hash (hex or Base64), one-time token or token they did not issue; a gate fails the build when a read endpoint is not scanned. Rendered notification content is added with phase 4 |
+| REQ-SEC-015 | Test | [AuditCompletenessIT](../../src/test/java/io/github/kaulinmindiola/warden/AuditCompletenessIT.java) | Partial | Each of the 13 existing actions, performed through the API, produces exactly one record with time, actor, workspace, outcome and `traceId` and no secret. Template changes and dead-letter retries have no operation until phase 4; the test fails if an action is neither covered nor listed as pending. Exception to the M3 exit criteria |
+| REQ-SEC-016 | Inspection | [AuditRetentionIT](../../src/test/java/io/github/kaulinmindiola/warden/shared/audit/AuditRetentionIT.java) | Passed | No endpoint modifies the log and the runtime role cannot update, delete or truncate it (AuditLogIT); with the clock aligned, a record of 365 d + 1 s is purged and one of 364 d kept; no cutoff purges a younger record |
 | REQ-SEC-017 | Test | [ProblemDetailsContractIT](../../src/test/java/io/github/kaulinmindiola/warden/shared/web/ProblemDetailsContractIT.java) | Passed | Error responses carry no stack traces, SQL, class names or exception messages (also ApiConventionsIT) |
 | REQ-SEC-018 | Test | [ApiConventionsIT](../../src/test/java/io/github/kaulinmindiola/warden/shared/web/ApiConventionsIT.java) | Passed | A 64 KiB body is accepted and one byte more gets 413 |
-| REQ-SEC-019 | Inspection | TBD | Pending | — |
+| REQ-SEC-019 | Inspection | [ProdLikeProfileIT](../../src/test/java/io/github/kaulinmindiola/warden/shared/security/ProdLikeProfileIT.java) | Passed | The `prod-like` profile negotiates TLS, sends `Strict-Transport-Security` for one year with subdomains, rejects plain HTTP and does not start without its keystore |
 | REQ-REL-001 | Test | TBD | Pending | — |
 | REQ-REL-002 | Test | TBD | Pending | — |
 | REQ-REL-003 | Test | TBD | Pending | — |
 | REQ-REL-004 | Test | TBD | Pending | — |
 | REQ-REL-005 | Test | TBD | Pending | — |
 | REQ-REL-006 | Test | TBD | Pending | — |
-| REQ-REL-007 | Test | TBD | Pending | — |
-| REQ-REL-008 | Test | TBD | Pending | — |
-| REQ-REL-009 | Test | TBD | Pending | — |
-| REQ-AVAIL-001 | Test | TBD | Pending | — |
+| REQ-REL-007 | Test | [RevocationDegradationIT](../../src/test/java/io/github/kaulinmindiola/warden/iam/web/RevocationDegradationIT.java) | Passed | With Redis frozen a revoked session gets 401 and a valid one is accepted; sessions revoked during the outage stay rejected after recovery; with Redis and PostgreSQL frozen the request gets 503 (DependencyOutageIT) |
+| REQ-REL-008 | Test | [RateLimitFallbackIT](../../src/test/java/io/github/kaulinmindiola/warden/shared/ratelimit/RateLimitFallbackIT.java) | Passed | With Redis frozen and one instance the 6th failed login gets 429; the limits return to Redis once it answers |
+| REQ-REL-009 | Test | [DependencyOutageIT](../../src/test/java/io/github/kaulinmindiola/warden/shared/web/DependencyOutageIT.java) | Passed | With PostgreSQL frozen, register, login, refresh, the session list and a workspace read get 503 with `Retry-After: 5` and none gets 2xx |
+| REQ-AVAIL-001 | Test | [DependencyOutageIT](../../src/test/java/io/github/kaulinmindiola/warden/shared/web/DependencyOutageIT.java) | Passed | Readiness is DOWN only while PostgreSQL is down, not with Redis down; liveness stays UP |
 | REQ-AVAIL-002 | Test | TBD | Pending | — |
 | REQ-AVAIL-003 | Test | TBD | Pending | — |
 | REQ-OBS-001 | Test | TBD | Pending | — |
@@ -1685,7 +1685,7 @@ N/A — Warden does not incorporate machine learning models or data-driven compo
 | REQ-COMP-002 | Test | TBD | Pending | — |
 | REQ-COMP-003 | Inspection | TBD | Pending | — |
 | REQ-INST-001 | Demonstration | TBD | Pending | — |
-| REQ-INST-002 | Inspection | TBD | Pending | — |
+| REQ-INST-002 | Inspection | [KeyConfigurationTest](../../src/test/java/io/github/kaulinmindiola/warden/shared/crypto/KeyConfigurationTest.java) | Passed | Keys come only from the environment; the `prod-like` profile refuses ephemeral keys and the full application does not start without them (ProdLikeProfileIT) |
 | REQ-INST-003 | Test | TBD | Pending | — |
 | REQ-INST-004 | Demonstration | TBD | Pending | — |
 | REQ-BUILD-001 | Demonstration | [CI workflow](../../.github/workflows/ci.yml) | Passed | `./mvnw -B verify` succeeds on a fresh GitHub-hosted runner with only Temurin 21 and Docker, including integration tests on PostgreSQL 17 and Redis 8 |
