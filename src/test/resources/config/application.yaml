@@ -1,6 +1,17 @@
 # Test classpath only: loaded in addition to the main application.yaml and takes precedence
 # over it. Tests run without configured keys, so missing keys are generated in memory. The
 # prod-like profile still refuses them (REQ-INST-002).
+
+# Spring keeps every distinct test context alive, each with its own connection pool. Hikari's
+# default keeps all 10 connections of a pool open while idle, so a dozen cached contexts exhaust
+# PostgreSQL. Test pools keep one idle connection and close the rest after 10 s (the Hikari
+# minimum); the maximum, and so the concurrency available to a test, is unchanged.
+spring:
+  datasource:
+    hikari:
+      minimum-idle: 1
+      idle-timeout: 10000
+
 warden:
   keys:
     allow-ephemeral: true
