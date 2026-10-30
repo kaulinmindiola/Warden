@@ -60,6 +60,12 @@ Prerequisites: JDK 21 (Temurin), Docker Desktop (or Docker Engine with Compose) 
 Ephemeral keys do not survive a restart: tokens issued before it become invalid. To keep them,
 and to change ports or passwords, see [`.env.example`](.env.example).
 
+The `prod-like` profile behaves like production: the API is served over HTTPS only, on port
+`WARDEN_SERVER_PORT` (8443 by default), every response carries `Strict-Transport-Security`, and
+the keys and the TLS keystore are mandatory. Startup fails, naming the variable, when one is
+missing (REQ-SEC-019, REQ-INST-002). The TLS and key sections of [`.env.example`](.env.example)
+explain how to create them.
+
 Run the full build, including the integration tests on Testcontainers (Docker must be running):
 
 ```bash

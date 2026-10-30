@@ -27,9 +27,16 @@ import org.springframework.security.web.SecurityFilterChain;
  * endpoint can reject a refresh token sent there. There is no session, no CSRF protection (no
  * cookies or ambient credentials are accepted), no form login and no HTTP Basic. Authentication
  * failures and access denials are rendered as problem details.
+ *
+ * <p>Every response to an HTTPS request carries {@code Strict-Transport-Security} for one year,
+ * subdomains included (REQ-SEC-019). Browsers ignore the header over plain HTTP, so it is sent only
+ * on secure requests, which in the {@code prod-like} profile are all of them.
  */
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfiguration {
+
+    /** HSTS lifetime: one year. */
+    static final long HSTS_MAX_AGE_SECONDS = 31_536_000L;
 
     /** Public endpoints of REQ-SEC-001. They match exactly, so sub-paths stay protected. */
     static final Set<String> PUBLIC_API_PATHS = Set.of(
@@ -71,6 +78,8 @@ public class SecurityConfiguration {
                 .logout(AbstractHttpConfigurer::disable)
                 .requestCache(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .headers(headers -> headers.httpStrictTransportSecurity(
+                        hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(HSTS_MAX_AGE_SECONDS)))
                 .authorizeHttpRequests(requests -> requests.requestMatchers(PUBLIC_PATHS)
                         .permitAll()
                         .anyRequest()
