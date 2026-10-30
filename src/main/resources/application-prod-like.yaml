@@ -1,0 +1,19 @@
+# Production-like profile (REQ-SEC-019, REQ-INST-002, CON-009). Outside the local environment
+# the API is served over HTTPS only, with HSTS, and every key comes from the environment.
+#
+# There is no default for any value below: when one is missing, startup fails with a message that
+# names the variable. The connector speaks only TLS; a plain HTTP request to the port is rejected.
+# The management port stays plain HTTP: it is never published outside the deployment network.
+server:
+  port: ${WARDEN_SERVER_PORT:8443}
+  ssl:
+    enabled: true
+    key-store: ${WARDEN_TLS_KEYSTORE}
+    key-store-password: ${WARDEN_TLS_KEYSTORE_PASSWORD}
+    key-store-type: PKCS12
+    enabled-protocols: TLSv1.3,TLSv1.2
+
+# Keys are mandatory: the prod-like profile never generates ephemeral ones (KeyConfiguration).
+warden:
+  keys:
+    allow-ephemeral: false
