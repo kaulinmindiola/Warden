@@ -59,6 +59,10 @@ final class SharedContainers {
         container.withEnv("WARDEN_DB_APP_PASSWORD", APP_PASSWORD);
         container.withCopyFileToContainer(
                 MountableFile.forHostPath(ROLES_SCRIPT, 0755), "/docker-entrypoint-initdb.d/01-roles.sh");
+        // Every cached test context holds a pool, and several tests open dedicated ones: room for
+        // all of them beyond PostgreSQL's default of 100 connections. fsync=off is the container's
+        // own default, kept because this command replaces it.
+        container.withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=300");
         return container;
     }
 
