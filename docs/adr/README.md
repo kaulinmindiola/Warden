@@ -139,7 +139,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Adds containers and dependencies; must stay proportional (CON-007, CON-009).
 - **Affected elements:** V19, V21; REQ-OBS-001–008.
 - **Baseline direction:** Micrometer + Prometheus + Grafana, Boot structured JSON logs, Micrometer Tracing with trace id persisted in events; no Tempo/Jaeger or Alertmanager in 1.0.
-- **Status:** PLANNED · **Phase:** 5
+- **Status:** ACCEPTED — [ADR-018](ADR-018-observability-stack.md) · **Phase:** 5
 
 ### ADR-019 — Response-time equalization against account enumeration
 - **Description:** How login, registration and password-reset responses become indistinguishable in time.
