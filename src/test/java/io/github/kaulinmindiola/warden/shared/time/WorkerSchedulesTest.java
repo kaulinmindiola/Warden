@@ -3,10 +3,12 @@ package io.github.kaulinmindiola.warden.shared.time;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import io.github.kaulinmindiola.warden.iam.infrastructure.IamRetention;
 import io.github.kaulinmindiola.warden.iam.infrastructure.RevocationReconciler;
 import io.github.kaulinmindiola.warden.notification.application.worker.DeliveryWorker;
 import io.github.kaulinmindiola.warden.notification.application.worker.OutboxDispatchWorker;
 import io.github.kaulinmindiola.warden.shared.audit.AuditRetention;
+import io.github.kaulinmindiola.warden.shared.outbox.OutboxRetention;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
@@ -20,7 +22,9 @@ class WorkerSchedulesTest {
         "io.github.kaulinmindiola.warden.notification.application.worker.OutboxDispatchSchedule",
         "io.github.kaulinmindiola.warden.notification.application.worker.DeliveryWorkerSchedule",
         "io.github.kaulinmindiola.warden.iam.infrastructure.RevocationReconcileSchedule",
-        "io.github.kaulinmindiola.warden.shared.audit.AuditPurgeSchedule"
+        "io.github.kaulinmindiola.warden.shared.audit.AuditPurgeSchedule",
+        "io.github.kaulinmindiola.warden.shared.outbox.OutboxPurgeSchedule",
+        "io.github.kaulinmindiola.warden.iam.infrastructure.IamPurgeSchedule"
     };
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
@@ -28,6 +32,8 @@ class WorkerSchedulesTest {
             .withBean(DeliveryWorker.class, () -> mock(DeliveryWorker.class))
             .withBean(RevocationReconciler.class, () -> mock(RevocationReconciler.class))
             .withBean(AuditRetention.class, () -> mock(AuditRetention.class))
+            .withBean(OutboxRetention.class, () -> mock(OutboxRetention.class))
+            .withBean(IamRetention.class, () -> mock(IamRetention.class))
             .withUserConfiguration(scheduleClasses());
 
     @Test
