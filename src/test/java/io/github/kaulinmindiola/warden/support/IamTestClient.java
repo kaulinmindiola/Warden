@@ -7,6 +7,7 @@ import com.jayway.jsonpath.JsonPath;
 import io.github.kaulinmindiola.warden.shared.crypto.SealedSecret;
 import io.github.kaulinmindiola.warden.shared.crypto.SecretCipher;
 import io.github.kaulinmindiola.warden.shared.web.ApiWebConfiguration;
+import jakarta.servlet.Filter;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
@@ -48,7 +49,16 @@ public final class IamTestClient {
     private final SecretCipher secretCipher;
 
     public IamTestClient(WebApplicationContext context) {
+        this(context, new Filter[0]);
+    }
+
+    /**
+     * A client whose requests pass through {@code filters} before the security filter chain, such
+     * as the HTTP server observation filter that MockMvc leaves out.
+     */
+    public IamTestClient(WebApplicationContext context, Filter... filters) {
         this.mvc = MockMvcBuilders.webAppContextSetup(context)
+                .addFilters(filters)
                 .apply(springSecurity())
                 .build();
         this.jsonMapper = context.getBean(JsonMapper.class);
