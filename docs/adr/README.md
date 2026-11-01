@@ -118,14 +118,14 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Distinct from the outbox: affects at-least-once behaviour towards providers and multi-instance safety.
 - **Affected elements:** V13, V15, V16; REQ-REL-002; REQ-AVAIL-003.
 - **Baseline direction:** `SKIP LOCKED` claim + 30 s lease, result re-checked under lock, provider idempotency key = delivery id; no ShedLock or external queue.
-- **Status:** PLANNED · **Phase:** 4
+- **Status:** ACCEPTED — [ADR-015](ADR-015-delivery-leases.md) · **Phase:** 4
 
 ### ADR-016 — Restricted placeholder renderer for templates
 - **Description:** Engine used for ADMIN-editable templates.
 - **Reason:** Security control (REQ-SEC-013); a general template engine would allow logic.
 - **Affected elements:** V09, V14-A6; REQ-FUNC-052–054.
 - **Baseline direction:** In-house single-pass `{{var}}` renderer with declared-variable validation.
-- **Status:** PLANNED · **Phase:** 4
+- **Status:** ACCEPTED — [ADR-016](ADR-016-placeholder-renderer.md) · **Phase:** 4
 
 ### ADR-017 — Notification data ownership and event-carried recipient data
 - **Description:** Which module owns recipient e-mail, locale and preferences when `notification` may not query other modules.
