@@ -6,7 +6,7 @@ reuse detection, and reliable e-mail delivery.
 
 ## Status
 
-🚧 Early development. Milestone **M3 — abuse protection and degradation** (`v0.4.0`) is complete:
+🚧 Early development. Milestone **M4 — notifications** (`v0.5.0`) is complete:
 
 - Identity core (M1): registration, e-mail verification, login, sessions, refresh-token rotation
   with reuse detection, logout, session termination and password reset, all without revealing
@@ -21,18 +21,24 @@ reuse detection, and reliable e-mail delivery.
   keeps revocation working through PostgreSQL; a PostgreSQL outage answers 503 and never grants
   access. Audit records are complete and kept 365 days, no response carries a secret, and the
   `prod-like` profile serves HTTPS only with HSTS.
+- Notifications (M4): every event becomes one delivery per recipient, rendered from plain-text
+  templates in Spanish or English and sent through a primary or a secondary e-mail provider with
+  timeouts, circuit breakers, failover and backoff. Deliveries end `SENT`, `DEAD` or `CANCELLED`
+  across crashes, restarts and several instances; ADMINs list them and retry dead ones; links
+  carry their token only in the URL fragment; old events and credentials are purged daily.
 - `./mvnw verify` runs formatting, version, architecture, unit and integration checks against
   real PostgreSQL 17 and Redis 8, fails below 80 % line coverage of the domain and application
   layers, and fails if a workspace endpoint is missing from the isolation suite or does not
   declare its minimum role.
 
-Notifications are recorded in the outbox but not yet delivered by e-mail; they come next (M4).
+Operability and the release come next (M5): verified telemetry, a single-command run, a published
+image and the usage guide.
 
 ## Run locally
 
 Prerequisites: JDK 21 (Temurin), Docker Desktop (or Docker Engine with Compose) and Git.
 
-1. Start PostgreSQL and Redis:
+1. Start PostgreSQL, Redis and the two simulated e-mail providers:
 
    ```bash
    docker compose up -d
@@ -60,6 +66,12 @@ Prerequisites: JDK 21 (Temurin), Docker Desktop (or Docker Engine with Compose) 
      -d '{"email":"ada@example.com","password":"correct horse battery staple"}' \
      http://localhost:8080/api/v1/auth/login
    ```
+
+No e-mail leaves your machine: the simulated providers keep every message in their journals,
+`http://localhost:8091/__admin/requests` (provider A) and `http://localhost:8092/__admin/requests`
+(provider B), where the verification, reset and invitation links can be copied. Links point to
+`http://localhost:3001` by default; the `WARDEN_LINK_*` variables of
+[`.env.example`](.env.example) change them.
 
 Ephemeral keys do not survive a restart: tokens issued before it become invalid. To keep them,
 and to change ports or passwords, see [`.env.example`](.env.example).
@@ -107,6 +119,10 @@ Run the full build, including the integration tests on Testcontainers (Docker mu
 | GET | `/api/v1/workspaces/{workspaceId}/notes/{noteId}` | VIEWER |
 | PUT | `/api/v1/workspaces/{workspaceId}/notes/{noteId}` | MEMBER |
 | DELETE | `/api/v1/workspaces/{workspaceId}/notes/{noteId}` | MEMBER |
+| GET | `/api/v1/workspaces/{workspaceId}/notifications/deliveries` | ADMIN |
+| POST | `/api/v1/workspaces/{workspaceId}/notifications/deliveries/{deliveryId}/retry` | ADMIN |
+| GET | `/api/v1/me/notification-preferences` | Authenticated |
+| PUT | `/api/v1/me/notification-preferences` | Authenticated |
 
 Roles are ordered VIEWER < MEMBER < ADMIN < OWNER; a role grants everything the lower ones do.
 For non-members, workspace routes answer 404 exactly as for a workspace that does not exist.

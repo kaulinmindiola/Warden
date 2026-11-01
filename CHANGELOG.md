@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-01
+
+Milestone M4: notifications. Every event of the catalogue becomes deliveries that are rendered and
+sent through a primary or a secondary provider, and every delivery ends `SENT`, `DEAD` or
+`CANCELLED`, also across crashes, restarts and two running instances.
+
+### Added
+
+- Outbox dispatch every 500 ms in `SKIP LOCKED` batches, in insertion order and in one transaction
+  with the notification handler; sealed link tokens are removed when an event is published.
+- Global templates for 7 keys in Spanish and English, rendered by a placeholder-only renderer that
+  rejects undeclared variables and any other construct and inserts values literally.
+- Idempotent fan-out: one delivery per event, recipient and channel, with the template version
+  pinned, the recipient's locale and the informational-notice preference. Revoked, replaced or
+  accepted invitations and deleted workspaces cancel their unsent deliveries.
+- `GET` and `PUT /api/v1/me/notification-preferences`: locale, and `workspace.role-changed` per
+  workspace.
+- Two HTTP e-mail providers with 2 s connect and 5 s answer timeouts and result classification, a
+  circuit breaker per provider and failover within the same attempt; WireMock simulators in
+  Compose (ports 8091 and 8092) and in the tests.
+- Delivery worker: leased `SKIP LOCKED` claims, 8 concurrent sends on virtual threads, backoff of
+  1, 2, 4 and 8 s with ±50 % jitter, `DEAD` after 5 attempts or a permanent rejection, links with
+  the token only in the URL fragment and configurable base URLs, and sealed tokens dropped on
+  `SENT`, on `CANCELLED` and once expired. Metric `warden_notification_delivery_outcomes_total`.
+- `GET /api/v1/workspaces/{workspaceId}/notifications/deliveries` and `POST
+  …/deliveries/{deliveryId}/retry` for ADMINs, without message content; retries are audited as
+  `DELIVERY_RETRIED`.
+- Daily purges: published events after 7 days, single-use tokens 7 days after expiry, and dead
+  sessions with their refresh tokens after 30 days.
+- Evidence tests: 1,000 events dispatched and sent by two instances at once, session flows
+  alternating between instances, business operations during a provider outage, resumption by an
+  instance started later, and re-claim after a lapsed lease with the same idempotency key.
+- Threat model v3 covering the notification pipeline.
+- ADR-008, ADR-009, ADR-015 and ADR-016 accepted.
+
+### Changed
+
+- Integration tests share two in-process WireMock providers serving the mappings of
+  `ops/providers`.
+- `resilience4j-timelimiter` removed: the JDK HTTP client bounds every provider call.
+- `workspace.InvitationAccepted` now cancels the unsent deliveries of the invitation.
+
+### Known limitations
+
+- Workspace template customization (REQ-FUNC-053, 054) and its `TEMPLATE_CHANGED` audit record are
+  part of release 1.1; preferences cover only `workspace.role-changed`.
+- Delivery towards a provider is at-least-once; the simulators do not deduplicate by idempotency
+  key.
+- The REQ-SEC-010 timing analysis is still pending.
+
 ## [0.4.0] - 2026-10-30
 
 Milestone M3: abuse protection and degradation. The sensitive endpoints are rate limited, Redis
@@ -139,7 +189,8 @@ No API endpoint is implemented yet.
 - POC-002: tenant context does not leak across pooled database connections.
 - ADR-001, ADR-013 and ADR-020 accepted; ADR-005 proposed.
 
-[Unreleased]: https://github.com/kaulinmindiola/warden/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/kaulinmindiola/warden/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/kaulinmindiola/warden/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kaulinmindiola/warden/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kaulinmindiola/warden/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kaulinmindiola/warden/compare/v0.1.0...v0.2.0
