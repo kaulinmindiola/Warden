@@ -5,6 +5,7 @@ import io.github.kaulinmindiola.warden.notification.domain.Delivery;
 import io.github.kaulinmindiola.warden.notification.domain.DeliveryStatus;
 import io.github.kaulinmindiola.warden.notification.domain.DeliveryView;
 import io.github.kaulinmindiola.warden.notification.domain.NewDelivery;
+import io.github.kaulinmindiola.warden.notification.domain.NotificationScope;
 import io.github.kaulinmindiola.warden.shared.crypto.SealedSecret;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -134,6 +135,12 @@ public class DeliveryRepository {
             FROM notification_delivery
             WHERE id = :id AND workspace_id = :workspaceId
             FOR UPDATE
+            """;
+
+    private static final String COUNT_BY_STATUS_AND_SCOPE = """
+            SELECT status, scope, count(*) AS deliveries
+            FROM notification_delivery
+            GROUP BY status, scope
             """;
 
     private static final TypeReference<Map<String, String>> VARIABLES = new TypeReference<>() {};
@@ -292,6 +299,19 @@ public class DeliveryRepository {
                 .update();
     }
 
+    /**
+     * How many deliveries there are in each status and scope; combinations without deliveries are
+     * left out. Counts every workspace only in the system context.
+     */
+    public List<StatusCount> countByStatusAndScope() {
+        return jdbc.sql(COUNT_BY_STATUS_AND_SCOPE)
+                .query((row, rowNumber) -> new StatusCount(
+                        DeliveryStatus.valueOf(row.getString("status")),
+                        NotificationScope.valueOf(row.getString("scope")),
+                        row.getLong("deliveries")))
+                .list();
+    }
+
     private ClaimedDelivery toClaimed(ResultSet row, int rowNumber) throws SQLException {
         byte[] ciphertext = row.getBytes("secret_ciphertext");
         SealedSecret secret = ciphertext == null
@@ -353,4 +373,7 @@ public class DeliveryRepository {
      * @param linkUsable whether it still holds a sealed token that has not expired
      */
     public record RetryCandidate(Delivery delivery, UUID invitationId, boolean linkUsable) {}
+
+    /** The number of deliveries in one status and scope. */
+    public record StatusCount(DeliveryStatus status, NotificationScope scope, long count) {}
 }

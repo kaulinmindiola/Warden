@@ -2,9 +2,12 @@ package io.github.kaulinmindiola.warden.shared.outbox;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
@@ -35,6 +38,10 @@ import org.springframework.transaction.interceptor.TransactionAspectSupport;
  *
  * <p>The dispatcher does not open the transaction: the notification worker does, in the system
  * context its handler needs (SDD V04 R5, V07).
+ *
+ * <p>The time from an event's occurrence to its publication is recorded in {@code
+ * warden_outbox_lag_seconds}, a histogram with a bucket at the 5 s target of REQ-PERF-004
+ * (REQ-OBS-002).
  */
 @Component
 public class OutboxDispatcher {
@@ -43,6 +50,12 @@ public class OutboxDispatcher {
     public static final int BATCH_SIZE = 100;
 
     static final String FAILURE_METRIC = "warden.outbox.dispatch.failures";
+
+    /** Time from an event's occurrence to its publication. */
+    public static final String LAG_METRIC = "warden.outbox.lag";
+
+    /** The p95 target of the outbox lag (REQ-PERF-004). */
+    public static final Duration LAG_TARGET = Duration.ofSeconds(5);
 
     private static final Logger log = LoggerFactory.getLogger(OutboxDispatcher.class);
 
@@ -65,6 +78,7 @@ public class OutboxDispatcher {
     private final ObjectProvider<OutboxEventHandler> handlers;
     private final Clock clock;
     private final Counter failures;
+    private final Timer lag;
 
     public OutboxDispatcher(
             JdbcClient jdbc, ObjectProvider<OutboxEventHandler> handlers, Clock clock, MeterRegistry meterRegistry) {
@@ -73,6 +87,13 @@ public class OutboxDispatcher {
         this.clock = clock;
         this.failures = Counter.builder(FAILURE_METRIC)
                 .description("Outbox events a handler failed to consume; they stay pending and are retried")
+                .register(meterRegistry);
+        this.lag = Timer.builder(LAG_METRIC)
+                .description("Time from an event's occurrence to its publication")
+                .publishPercentileHistogram()
+                .serviceLevelObjectives(LAG_TARGET)
+                .minimumExpectedValue(Duration.ofMillis(10))
+                .maximumExpectedValue(Duration.ofMinutes(10))
                 .register(meterRegistry);
     }
 
@@ -119,12 +140,13 @@ public class OutboxDispatcher {
             return false;
         }
         jdbc.sql("RELEASE SAVEPOINT outbox_dispatch").update();
+        Instant publishedAt = clock.instant().truncatedTo(ChronoUnit.MICROS);
         jdbc.sql(MARK_PUBLISHED)
-                .param(
-                        "publishedAt",
-                        OffsetDateTime.ofInstant(clock.instant().truncatedTo(ChronoUnit.MICROS), ZoneOffset.UTC))
+                .param("publishedAt", OffsetDateTime.ofInstant(publishedAt, ZoneOffset.UTC))
                 .param("id", event.eventId())
                 .update();
+        Duration sinceOccurrence = Duration.between(event.occurredAt(), publishedAt);
+        lag.record(sinceOccurrence.isNegative() ? Duration.ZERO : sinceOccurrence);
         return true;
     }
 
