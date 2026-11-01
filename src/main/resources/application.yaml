@@ -90,6 +90,14 @@ warden:
       b-url: ${WARDEN_PROVIDER_B_URL:http://localhost:8092}
       connect-timeout: 2s
       request-timeout: 5s
+    # One breaker per provider (REQ-REL-004, ADR-009): opens when half of the last 20 calls, with a
+    # minimum of 10, failed transiently; stays open 30 s; then 3 probe calls decide.
+    circuit-breaker:
+      sliding-window-size: 20
+      minimum-calls: 10
+      failure-rate-threshold: 50
+      wait-in-open-state: 30s
+      probe-calls: 3
 
 # One JSON object per log line, including traceId and spanId from the MDC (REQ-OBS-004, SDD V19).
 logging:
