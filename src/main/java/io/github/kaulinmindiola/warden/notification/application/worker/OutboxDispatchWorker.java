@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
  * lives here and not next to the dispatcher in {@code shared}.
  *
  * <p>Every instance runs the tick; {@code FOR UPDATE SKIP LOCKED} keeps their batches disjoint.
+ * Once the application starts shutting down, the {@link WorkerGate} is closed and no new batch is
+ * taken (REQ-AVAIL-002).
  */
 @Component
 public class OutboxDispatchWorker {
@@ -22,10 +24,12 @@ public class OutboxDispatchWorker {
 
     private final TenantTransactions transactions;
     private final OutboxDispatcher dispatcher;
+    private final WorkerGate gate;
 
-    public OutboxDispatchWorker(TenantTransactions transactions, OutboxDispatcher dispatcher) {
+    public OutboxDispatchWorker(TenantTransactions transactions, OutboxDispatcher dispatcher, WorkerGate gate) {
         this.transactions = transactions;
         this.dispatcher = dispatcher;
+        this.gate = gate;
     }
 
     /**
@@ -43,12 +47,19 @@ public class OutboxDispatchWorker {
     }
 
     /**
-     * Dispatches one batch now. Tests call it directly, since workers are switched off on the
-     * test classpath.
+     * Dispatches one batch now, unless the application is shutting down. Tests call it directly,
+     * since workers are switched off on the test classpath.
      *
-     * @return the number of events marked published
+     * @return the number of events marked published; 0 once the gate is closed
      */
     public int runOnce() {
-        return transactions.system(dispatcher::dispatchBatch);
+        if (!gate.tryEnter()) {
+            return 0;
+        }
+        try {
+            return transactions.system(dispatcher::dispatchBatch);
+        } finally {
+            gate.exit();
+        }
     }
 }

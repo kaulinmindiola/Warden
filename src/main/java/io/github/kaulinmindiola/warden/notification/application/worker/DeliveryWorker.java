@@ -81,6 +81,7 @@ public class DeliveryWorker {
     private final DeliveryProperties properties;
     private final Clock clock;
     private final MeterRegistry meterRegistry;
+    private final WorkerGate gate;
 
     public DeliveryWorker(
             TenantTransactions transactions,
@@ -93,7 +94,8 @@ public class DeliveryWorker {
             BackoffPolicy backoff,
             DeliveryProperties properties,
             Clock clock,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            WorkerGate gate) {
         this.transactions = transactions;
         this.deliveries = deliveries;
         this.templates = templates;
@@ -105,6 +107,7 @@ public class DeliveryWorker {
         this.properties = properties;
         this.clock = clock;
         this.meterRegistry = meterRegistry;
+        this.gate = gate;
     }
 
     /**
@@ -122,12 +125,24 @@ public class DeliveryWorker {
     }
 
     /**
-     * Sends one batch of due deliveries now and waits until every one is recorded. Tests call it
-     * directly, since workers are switched off on the test classpath.
+     * Sends one batch of due deliveries now and waits until every one is recorded, unless the
+     * application is shutting down: once the {@link WorkerGate} is closed nothing is claimed
+     * (REQ-AVAIL-002). Tests call it directly, since workers are switched off on the test classpath.
      *
-     * @return how many deliveries were claimed
+     * @return how many deliveries were claimed; 0 once the gate is closed
      */
     public int runOnce() {
+        if (!gate.tryEnter()) {
+            return 0;
+        }
+        try {
+            return claimAndSend();
+        } finally {
+            gate.exit();
+        }
+    }
+
+    private int claimAndSend() {
         Instant now = clock.instant();
         transactions.system(() -> deliveries.discardExpiredSecrets(now));
         List<ClaimedDelivery> claimed = claim();
