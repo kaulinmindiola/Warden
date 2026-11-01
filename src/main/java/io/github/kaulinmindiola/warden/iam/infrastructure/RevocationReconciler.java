@@ -3,10 +3,8 @@ package io.github.kaulinmindiola.warden.iam.infrastructure;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
@@ -22,8 +20,9 @@ import org.springframework.stereotype.Component;
  *       instance (DRISK-01).
  * </ul>
  *
- * <p>Runs in every instance; rewriting the same keys twice is harmless. Scheduling is disabled in
- * tests, which call {@link #recover()} and {@link #reconcile()} directly.
+ * <p>Runs in every instance; rewriting the same keys twice is harmless. {@link
+ * RevocationReconcileSchedule} ticks it every 5 seconds while workers are switched on; tests, where
+ * they are off, call {@link #recover()} and {@link #reconcile()} directly.
  */
 @Component
 public class RevocationReconciler {
@@ -45,7 +44,6 @@ public class RevocationReconciler {
     }
 
     /** Recovers a degraded store, or reconciles a healthy one when its interval has passed. */
-    @Scheduled(fixedDelay = 5, initialDelay = 5, timeUnit = TimeUnit.SECONDS)
     void tick() {
         if (store.isDegraded()) {
             recover();

@@ -8,7 +8,6 @@ import java.time.ZoneOffset;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
@@ -16,8 +15,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>The application role cannot delete audit records; the purge goes through the {@code
  * SECURITY DEFINER} function {@code purge_audit_log(cutoff)}, which never deletes a record younger
- * than 365 days whatever cutoff it receives. Every instance runs the job; deleting the same old
- * records twice is harmless. A failure is logged and the next day's run catches up.
+ * than 365 days whatever cutoff it receives. {@link AuditPurgeSchedule} runs it every day while
+ * workers are switched on. Every instance runs the job; deleting the same old records twice is
+ * harmless. A failure is logged and the next day's run catches up.
  */
 @Component
 public class AuditRetention {
@@ -35,8 +35,7 @@ public class AuditRetention {
         this.clock = clock;
     }
 
-    /** Runs every day at 03:17 UTC, outside the hours of most traffic. */
-    @Scheduled(cron = "0 17 3 * * *", zone = "UTC")
+    /** One scheduled run: a failure is logged instead of propagated. */
     void scheduledPurge() {
         try {
             purge();
