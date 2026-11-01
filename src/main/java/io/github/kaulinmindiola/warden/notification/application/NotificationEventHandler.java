@@ -3,6 +3,7 @@ package io.github.kaulinmindiola.warden.notification.application;
 import io.github.kaulinmindiola.warden.notification.application.EventPayloads.AccountLink;
 import io.github.kaulinmindiola.warden.notification.application.EventPayloads.AccountNotice;
 import io.github.kaulinmindiola.warden.notification.application.EventPayloads.Invitation;
+import io.github.kaulinmindiola.warden.notification.application.EventPayloads.InvitationRevoked;
 import io.github.kaulinmindiola.warden.notification.application.EventPayloads.Recipient;
 import io.github.kaulinmindiola.warden.notification.application.EventPayloads.RoleChanged;
 import io.github.kaulinmindiola.warden.notification.domain.NewDelivery;
@@ -45,9 +46,12 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>Idempotent: an event handed over again creates no second delivery (REQ-FUNC-061).
  * </ol>
  *
- * <p>Event types without a notification, and types of other consumers, create nothing here. The
- * cancellations of {@code workspace.InvitationRevoked} and {@code workspace.WorkspaceDeleted}
- * belong to the same handler and arrive with them.
+ * <p>{@code workspace.InvitationRevoked} (revoked or replaced) and {@code workspace.WorkspaceDeleted}
+ * cancel the unsent deliveries of the invitation or of the workspace and drop their sealed tokens
+ * (REQ-FUNC-062). Events are dispatched in insertion order, so a cancellation finds the
+ * deliveries of the events published before it, even within the same batch. Cancelling twice changes nothing. Other
+ * event types, such as {@code workspace.InvitationAccepted} or those of other consumers, create
+ * nothing here.
  */
 @Component
 public class NotificationEventHandler implements OutboxEventHandler {
@@ -59,6 +63,8 @@ public class NotificationEventHandler implements OutboxEventHandler {
     static final String REFRESH_TOKEN_REUSE_DETECTED = "iam.RefreshTokenReuseDetected";
     static final String MEMBER_INVITED = "workspace.MemberInvited";
     static final String MEMBER_ROLE_CHANGED = "workspace.MemberRoleChanged";
+    static final String INVITATION_REVOKED = "workspace.InvitationRevoked";
+    static final String WORKSPACE_DELETED = "workspace.WorkspaceDeleted";
 
     private static final Set<String> LOCALES = Set.of("es", "en");
     private static final String DEFAULT_LOCALE = "es";
@@ -95,6 +101,24 @@ public class NotificationEventHandler implements OutboxEventHandler {
 
     @Override
     public void handle(DomainEvent event) {
+        switch (event.type()) {
+            case INVITATION_REVOKED -> {
+                deliveries.cancelUnsentOfInvitation(
+                        read(event, InvitationRevoked.class).invitationId());
+                return;
+            }
+            case WORKSPACE_DELETED -> {
+                requireSupportedVersion(event);
+                if (event.workspaceId() == null) {
+                    throw new IllegalStateException("A workspace deletion event carries no workspace");
+                }
+                deliveries.cancelUnsentOfWorkspace(event.workspaceId());
+                return;
+            }
+            default -> {
+                // not a cancellation: fan out below, if the type has a notification
+            }
+        }
         Fanout fanout = fanoutOf(event);
         if (fanout == null) {
             return;
@@ -191,11 +215,15 @@ public class NotificationEventHandler implements OutboxEventHandler {
 
     /** Payload of a consumed type; only schema version 1 exists in release 1.0. */
     private <T> T read(DomainEvent event, Class<T> payloadType) {
+        requireSupportedVersion(event);
+        return jsonMapper.readValue(event.payload(), payloadType);
+    }
+
+    private static void requireSupportedVersion(DomainEvent event) {
         if (event.schemaVersion() != SUPPORTED_SCHEMA_VERSION) {
             throw new IllegalStateException(
                     "Unsupported schema version " + event.schemaVersion() + " of " + event.type());
         }
-        return jsonMapper.readValue(event.payload(), payloadType);
     }
 
     /** Recipients by recipient key, in payload order, each key once. */
