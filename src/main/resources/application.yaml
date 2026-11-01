@@ -10,6 +10,11 @@ spring:
     virtual:
       enabled: true
 
+  # Request parameters and headers, Authorization included, are never written to the log, not even
+  # at DEBUG (REQ-OBS-005, SDD V19). No request or response body is logged anywhere.
+  mvc:
+    log-request-details: false
+
   # Runtime connections use the application role. It owns no table, so Row Level Security
   # applies to it (ADR-013, SDD V06). No default password: only the local profile has one.
   # A connection that cannot be obtained within 2 s fails the request with 503 instead of making
@@ -117,11 +122,15 @@ warden:
         max: 60s
         jitter: 0.5
 
-# One JSON object per log line, including traceId and spanId from the MDC (REQ-OBS-004, SDD V19).
+# One JSON object per log line, including traceId, spanId, userId, workspaceId and originTraceId
+# from the MDC (REQ-OBS-004, 006, SDD V19). Every text value is redacted on the way out: tokens and
+# e-mail addresses are masked (REQ-OBS-005).
 logging:
   structured:
     format:
       console: logstash
+    json:
+      customizer: io.github.kaulinmindiola.warden.shared.logging.RedactingJsonMembersCustomizer
 
 # Actuator runs on a separate port that is never published outside the deployment network.
 # Readiness depends on PostgreSQL and on the application accepting traffic, never on Redis, whose
