@@ -1,5 +1,7 @@
 package io.github.kaulinmindiola.warden.support;
 
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
@@ -17,6 +19,9 @@ import org.testcontainers.utility.MountableFile;
  * {@code warden_app} and Flyway migrates as {@code warden_owner}; nothing connects as the
  * container superuser, which bypasses Row Level Security and would make isolation tests pass
  * falsely. Role passwords are random for every run.
+ *
+ * <p>Two in-process WireMock servers stand in for the e-mail providers A and B, with the mappings
+ * of {@code ops/providers} that Docker Compose uses too: the recipient's domain decides the answer.
  */
 final class SharedContainers {
 
@@ -29,10 +34,14 @@ final class SharedContainers {
 
     static final PostgreSQLContainer POSTGRES = createPostgres();
     static final GenericContainer<?> REDIS = createRedis();
+    static final WireMockServer PROVIDER_A = createProvider("ops/providers/a");
+    static final WireMockServer PROVIDER_B = createProvider("ops/providers/b");
 
     static {
         POSTGRES.start();
         REDIS.start();
+        PROVIDER_A.start();
+        PROVIDER_B.start();
     }
 
     private SharedContainers() {}
@@ -46,6 +55,8 @@ final class SharedContainers {
         registry.add("spring.flyway.password", () -> OWNER_PASSWORD);
         registry.add("spring.data.redis.host", REDIS::getHost);
         registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(REDIS_PORT));
+        registry.add("warden.notification.providers.a-url", PROVIDER_A::baseUrl);
+        registry.add("warden.notification.providers.b-url", PROVIDER_B::baseUrl);
     }
 
     private static PostgreSQLContainer createPostgres() {
@@ -64,6 +75,14 @@ final class SharedContainers {
         // own default, kept because this command replaces it.
         container.withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=300");
         return container;
+    }
+
+    private static WireMockServer createProvider(String directory) {
+        if (!Files.isDirectory(Path.of(directory, "mappings"))) {
+            throw new IllegalStateException("Provider mappings not found at "
+                    + Path.of(directory).toAbsolutePath() + "; integration tests must run from the repository root");
+        }
+        return new WireMockServer(WireMockConfiguration.options().dynamicPort().usingFilesUnderDirectory(directory));
     }
 
     private static GenericContainer<?> createRedis() {

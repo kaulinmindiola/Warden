@@ -1,17 +1,25 @@
 package io.github.kaulinmindiola.warden.notification.infrastructure;
 
+import io.github.kaulinmindiola.warden.notification.domain.ClaimedDelivery;
+import io.github.kaulinmindiola.warden.notification.domain.Delivery;
 import io.github.kaulinmindiola.warden.notification.domain.DeliveryStatus;
 import io.github.kaulinmindiola.warden.notification.domain.NewDelivery;
 import io.github.kaulinmindiola.warden.shared.crypto.SealedSecret;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Types;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.SqlParameterValue;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -45,6 +53,57 @@ public class DeliveryRepository {
             SET status = 'CANCELLED', secret_ciphertext = NULL, secret_key_id = NULL
             WHERE status IN ('PENDING', 'RETRYING', 'DEAD') AND %s = :id
             """;
+
+    /**
+     * Leases up to {@code :limit} due deliveries (SDD V14-A5). {@code SKIP LOCKED} keeps concurrent
+     * claims disjoint, and the lease keeps a claimed delivery out of later claims until it lapses.
+     */
+    private static final String CLAIM_DUE = """
+            UPDATE notification_delivery
+            SET lease_until = :leaseUntil
+            WHERE id IN (
+                SELECT id
+                FROM notification_delivery
+                WHERE status IN ('PENDING', 'RETRYING')
+                  AND next_attempt_at <= :now
+                  AND (lease_until IS NULL OR lease_until < :now)
+                ORDER BY next_attempt_at
+                LIMIT :limit
+                FOR UPDATE SKIP LOCKED)
+            RETURNING id, template_key, locale, template_version, recipient_email, variables::text AS variables,
+                      secret_ciphertext, secret_key_id, secret_expires_at
+            """;
+
+    private static final String LOCK_STATE = """
+            SELECT id, workspace_id, status, attempts, next_attempt_at, provider_used, last_error_class, sent_at
+            FROM notification_delivery
+            WHERE id = :id
+            FOR UPDATE
+            """;
+
+    /** Releases the lease and drops the sealed token once it is no longer needed (REQ-SEC-005). */
+    private static final String SAVE_STATE = """
+            UPDATE notification_delivery
+            SET status = :status,
+                attempts = :attempts,
+                next_attempt_at = :nextAttemptAt,
+                provider_used = :providerUsed,
+                last_error_class = :lastErrorClass,
+                sent_at = :sentAt,
+                lease_until = NULL,
+                secret_ciphertext = CASE WHEN :keepSecret THEN secret_ciphertext END,
+                secret_key_id = CASE WHEN :keepSecret THEN secret_key_id END
+            WHERE id = :id
+            """;
+
+    /** A token that can no longer be opened is useless, whatever the state (REQ-SEC-005). */
+    private static final String DISCARD_EXPIRED_SECRETS = """
+            UPDATE notification_delivery
+            SET secret_ciphertext = NULL, secret_key_id = NULL
+            WHERE secret_ciphertext IS NOT NULL AND secret_expires_at <= :now
+            """;
+
+    private static final TypeReference<Map<String, String>> VARIABLES = new TypeReference<>() {};
 
     private final JdbcClient jdbc;
     private final JsonMapper jsonMapper;
@@ -94,6 +153,57 @@ public class DeliveryRepository {
     }
 
     /**
+     * Leases the due deliveries, oldest due first, until {@code leaseUntil}. Commit right away, so
+     * other instances see the lease while the deliveries are being sent.
+     */
+    public List<ClaimedDelivery> claimDue(Instant now, Instant leaseUntil, int limit) {
+        return jdbc.sql(CLAIM_DUE)
+                .param("now", utc(now))
+                .param("leaseUntil", utc(leaseUntil))
+                .param("limit", limit)
+                .query(this::toClaimed)
+                .list();
+    }
+
+    /** The state of a delivery, locked until the end of the transaction. */
+    public Optional<Delivery> lockState(UUID id) {
+        return jdbc.sql(LOCK_STATE)
+                .param("id", id)
+                .query(DeliveryRepository::toDelivery)
+                .optional();
+    }
+
+    /**
+     * Stores the state of a delivery and releases its lease. The sealed token is dropped when the
+     * delivery no longer needs it.
+     */
+    public void saveState(Delivery delivery) {
+        jdbc.sql(SAVE_STATE)
+                .param("id", delivery.id())
+                .param("status", delivery.status().name())
+                .param("attempts", delivery.attempts())
+                .param("nextAttemptAt", utc(delivery.nextAttemptAt()))
+                .param("providerUsed", new SqlParameterValue(Types.VARCHAR, delivery.providerUsed()))
+                .param("lastErrorClass", new SqlParameterValue(Types.VARCHAR, delivery.lastErrorClass()))
+                .param(
+                        "sentAt",
+                        new SqlParameterValue(
+                                Types.TIMESTAMP_WITH_TIMEZONE,
+                                delivery.sentAt() == null ? null : utc(delivery.sentAt())))
+                .param("keepSecret", delivery.needsSecret())
+                .update();
+    }
+
+    /**
+     * Drops every sealed token that has expired at {@code now}.
+     *
+     * @return how many tokens were dropped
+     */
+    public int discardExpiredSecrets(Instant now) {
+        return jdbc.sql(DISCARD_EXPIRED_SECRETS).param("now", utc(now)).update();
+    }
+
+    /**
      * Cancels the unsent deliveries of a revoked or replaced invitation.
      *
      * @return how many deliveries were cancelled
@@ -113,5 +223,40 @@ public class DeliveryRepository {
         return jdbc.sql(CANCEL_UNSENT.formatted("workspace_id"))
                 .param("id", workspaceId)
                 .update();
+    }
+
+    private ClaimedDelivery toClaimed(ResultSet row, int rowNumber) throws SQLException {
+        byte[] ciphertext = row.getBytes("secret_ciphertext");
+        SealedSecret secret = ciphertext == null
+                ? null
+                : new SealedSecret(
+                        Base64.getEncoder().encodeToString(ciphertext),
+                        row.getString("secret_key_id"),
+                        row.getObject("secret_expires_at", OffsetDateTime.class).toInstant());
+        return new ClaimedDelivery(
+                row.getObject("id", UUID.class),
+                row.getString("template_key"),
+                row.getString("locale"),
+                row.getInt("template_version"),
+                row.getString("recipient_email"),
+                jsonMapper.readValue(row.getString("variables"), VARIABLES),
+                secret);
+    }
+
+    private static Delivery toDelivery(ResultSet row, int rowNumber) throws SQLException {
+        OffsetDateTime sentAt = row.getObject("sent_at", OffsetDateTime.class);
+        return Delivery.restore(
+                row.getObject("id", UUID.class),
+                row.getObject("workspace_id", UUID.class),
+                DeliveryStatus.valueOf(row.getString("status")),
+                row.getInt("attempts"),
+                row.getObject("next_attempt_at", OffsetDateTime.class).toInstant(),
+                row.getString("provider_used"),
+                row.getString("last_error_class"),
+                sentAt == null ? null : sentAt.toInstant());
+    }
+
+    private static OffsetDateTime utc(Instant instant) {
+        return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
     }
 }

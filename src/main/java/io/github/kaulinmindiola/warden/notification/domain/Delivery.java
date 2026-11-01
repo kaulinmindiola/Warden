@@ -136,6 +136,20 @@ public final class Delivery {
     }
 
     /**
+     * Gives up on a delivery that cannot be composed, such as one whose link has expired, without
+     * calling any provider. The attempts are not counted, since no attempt was made.
+     *
+     * @param errorClass the cause, for example {@code LINK_EXPIRED}
+     * @throws IllegalStateTransitionException if the delivery is not PENDING or RETRYING
+     */
+    public void abandon(String errorClass) {
+        Objects.requireNonNull(errorClass, "errorClass");
+        requireAllowed(DeliveryStatus.DEAD);
+        status = DeliveryStatus.DEAD;
+        lastErrorClass = errorClass;
+    }
+
+    /**
      * Returns a dead workspace-scope delivery to PENDING with its attempts reset, due at {@code now}
      * (REQ-FUNC-060). The last provider and error stay until the next attempt.
      *
