@@ -1,0 +1,16 @@
+{
+  "priority": 1,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/messages",
+    "bodyPatterns": [
+      { "matchesJsonPath": { "expression": "$.to", "matches": ".*@slow\\.test" } }
+    ]
+  },
+  "response": {
+    "status": 202,
+    "fixedDelayMilliseconds": 6000,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "status": "accepted" }
+  }
+}

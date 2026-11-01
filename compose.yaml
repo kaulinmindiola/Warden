@@ -32,5 +32,20 @@ services:
       timeout: 3s
       retries: 12
 
+  # Simulated e-mail providers A and B (REQ-INT-008): WireMock with the mappings of ops/providers.
+  provider-a:
+    image: wiremock/wiremock:3.13.2
+    ports:
+      - "127.0.0.1:${WARDEN_PROVIDER_A_PORT:-8091}:8080"
+    volumes:
+      - ./ops/providers/a/mappings:/home/wiremock/mappings:ro
+
+  provider-b:
+    image: wiremock/wiremock:3.13.2
+    ports:
+      - "127.0.0.1:${WARDEN_PROVIDER_B_PORT:-8092}:8080"
+    volumes:
+      - ./ops/providers/b/mappings:/home/wiremock/mappings:ro
+
 volumes:
   pg-data:
