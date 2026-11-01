@@ -72,6 +72,7 @@ class SecretsInResponsesIT extends IntegrationTest {
         READS.put(
                 API + "/workspaces/{workspaceId}/notes/{noteId}",
                 ids -> API + "/workspaces/" + ids.workspaceId() + "/notes/" + ids.noteId());
+        READS.put(API + "/me/notification-preferences", ids -> API + "/me/notification-preferences");
     }
 
     @Autowired
