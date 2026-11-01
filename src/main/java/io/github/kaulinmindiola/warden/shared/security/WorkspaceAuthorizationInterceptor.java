@@ -2,8 +2,13 @@ package io.github.kaulinmindiola.warden.shared.security;
 
 import io.github.kaulinmindiola.warden.shared.web.ProblemException;
 import io.github.kaulinmindiola.warden.shared.web.ProblemType;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -28,19 +33,41 @@ import org.springframework.web.servlet.HandlerMapping;
  *   <li>no authenticated caller → 401.
  * </ul>
  *
- * The granted {@link WorkspaceAccess} is stored as a request attribute for the handler.
+ * The granted {@link WorkspaceAccess} is stored as a request attribute for the handler. Every
+ * denial is counted in {@code warden_authz_denials_total{status=403|404|503}} (REQ-OBS-001).
  */
 public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
 
     /** Name of the path variable that carries the workspace id. */
     public static final String WORKSPACE_ID_VARIABLE = "workspaceId";
 
+    /** Authorization denials by status. */
+    public static final String DENIALS_METRIC = "warden.authz.denials";
+
+    public static final String STATUS_TAG = "status";
+
     private static final Logger log = LoggerFactory.getLogger(WorkspaceAuthorizationInterceptor.class);
 
     private final MembershipLookup membershipLookup;
+    private final Map<ProblemType, Counter> denials = new EnumMap<>(ProblemType.class);
 
+    /** An interceptor whose denials are counted in a registry of its own; for tests. */
     public WorkspaceAuthorizationInterceptor(MembershipLookup membershipLookup) {
+        this(membershipLookup, new SimpleMeterRegistry());
+    }
+
+    public WorkspaceAuthorizationInterceptor(MembershipLookup membershipLookup, MeterRegistry meterRegistry) {
         this.membershipLookup = Objects.requireNonNull(membershipLookup, "membershipLookup");
+        Objects.requireNonNull(meterRegistry, "meterRegistry");
+        for (ProblemType denial :
+                List.of(ProblemType.INSUFFICIENT_ROLE, ProblemType.NOT_FOUND, ProblemType.SERVICE_UNAVAILABLE)) {
+            denials.put(
+                    denial,
+                    Counter.builder(DENIALS_METRIC)
+                            .description("Workspace authorization denials by status")
+                            .tag(STATUS_TAG, String.valueOf(denial.status().value()))
+                            .register(meterRegistry));
+        }
     }
 
     @Override
@@ -52,6 +79,19 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
         if (required == null) {
             return true;
         }
+        try {
+            authorize(request, method, required);
+        } catch (ProblemException denied) {
+            Counter counter = denials.get(denied.type());
+            if (counter != null) {
+                counter.increment();
+            }
+            throw denied;
+        }
+        return true;
+    }
+
+    private void authorize(HttpServletRequest request, HandlerMethod method, RequiresWorkspaceRole required) {
         UUID workspaceId = workspaceIdOf(request, method);
         CurrentUser user = currentUser();
 
@@ -69,7 +109,6 @@ public class WorkspaceAuthorizationInterceptor implements HandlerInterceptor {
             throw new ProblemException(ProblemType.INSUFFICIENT_ROLE);
         }
         request.setAttribute(WorkspaceAccess.REQUEST_ATTRIBUTE, access);
-        return true;
     }
 
     private static UUID workspaceIdOf(HttpServletRequest request, HandlerMethod method) {

@@ -1,5 +1,7 @@
 package io.github.kaulinmindiola.warden.shared.security;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,14 +18,19 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WorkspaceAuthorizationConfiguration implements WebMvcConfigurer {
 
     private final ObjectProvider<MembershipLookup> membershipLookups;
+    private final ObjectProvider<MeterRegistry> meterRegistries;
 
-    public WorkspaceAuthorizationConfiguration(ObjectProvider<MembershipLookup> membershipLookups) {
+    public WorkspaceAuthorizationConfiguration(
+            ObjectProvider<MembershipLookup> membershipLookups, ObjectProvider<MeterRegistry> meterRegistries) {
         this.membershipLookups = membershipLookups;
+        this.meterRegistries = meterRegistries;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(new WorkspaceAuthorizationInterceptor(new DeferredMembershipLookup(membershipLookups)));
+        registry.addInterceptor(new WorkspaceAuthorizationInterceptor(
+                new DeferredMembershipLookup(membershipLookups),
+                meterRegistries.getIfAvailable(SimpleMeterRegistry::new)));
     }
 
     /**

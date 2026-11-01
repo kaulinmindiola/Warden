@@ -15,6 +15,7 @@ import io.github.kaulinmindiola.warden.iam.domain.RevocationStore;
 import io.github.kaulinmindiola.warden.iam.domain.TokenHash;
 import io.github.kaulinmindiola.warden.iam.domain.UserAccount;
 import io.github.kaulinmindiola.warden.iam.infrastructure.AuthSessionRevoker;
+import io.github.kaulinmindiola.warden.iam.infrastructure.IamMetrics;
 import io.github.kaulinmindiola.warden.iam.infrastructure.OneTimeTokenConsumer;
 import io.github.kaulinmindiola.warden.iam.infrastructure.OneTimeTokenRepository;
 import io.github.kaulinmindiola.warden.iam.infrastructure.UserAccountRepository;
@@ -76,6 +77,7 @@ public class PasswordResetService {
     private final OutboxPublisher outbox;
     private final AuditLog auditLog;
     private final RateLimiter rateLimiter;
+    private final IamMetrics metrics;
     private final UuidV7Generator ids;
     private final Clock clock;
     private final TransactionTemplate transactions;
@@ -94,6 +96,7 @@ public class PasswordResetService {
             OutboxPublisher outbox,
             AuditLog auditLog,
             RateLimiter rateLimiter,
+            IamMetrics metrics,
             UuidV7Generator ids,
             Clock clock,
             PlatformTransactionManager transactionManager) {
@@ -110,6 +113,7 @@ public class PasswordResetService {
         this.outbox = outbox;
         this.auditLog = auditLog;
         this.rateLimiter = rateLimiter;
+        this.metrics = metrics;
         this.ids = ids;
         this.clock = clock;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -173,6 +177,7 @@ public class PasswordResetService {
         });
 
         revokedSessions.forEach(revocationStore::markRevoked);
+        metrics.sessionsRevoked(AuthSession.RevokeReason.PASSWORD_RESET, revokedSessions.size());
     }
 
     private void issue(UserAccount account, String token, TokenHash hash) {
