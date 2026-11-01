@@ -1853,7 +1853,7 @@ All decisions have status **Approved** (2026-10-20). Those with an ADR are docum
 | TBD-06 | Current version and URL of NIST SP 800-63B and ASVS; official URL of Law 1581 | 1.4, REQ-COMP-003 | Check the official sources |
 | TBD-07 | Load-testing tool | Section 4 | At the start of phase 5 |
 | TBD-08 | Links to tests and evidence in the matrix | Section 4 | During implementation |
-| TBD-09 | Default base URL for links in the local profile | REQ-INT-009 | During phase 4 implementation |
+| TBD-09 | Default base URL for links in the local profile | REQ-INT-009 | Resolved in phase 4: `http://localhost:3001/verify-email`, `/reset-password` and `/accept-invitation`, configurable through `warden.notification.links.*` |
 
 ### Appendix E — Endpoint Catalog (Informative)
 
