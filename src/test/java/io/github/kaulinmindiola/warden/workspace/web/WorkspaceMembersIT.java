@@ -13,6 +13,8 @@ import io.github.kaulinmindiola.warden.support.IntegrationTest;
 import io.github.kaulinmindiola.warden.support.Verifies;
 import java.net.URI;
 import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -162,12 +164,18 @@ class WorkspaceMembersIT extends IntegrationTest {
     }
 
     /** Seeds a membership directly; the endpoints that add members arrive in later steps. */
-    private static void addMember(UUID workspaceId, UUID userId, String role) {
+    /**
+     * Seeds a membership that joins at the application clock's current instant, like the memberships
+     * the API creates. The database's {@code now()} would follow the container's clock, which can
+     * lag the host's and put a later member before the owner.
+     */
+    private void addMember(UUID workspaceId, UUID userId, String role) {
         superuser()
-                .sql("INSERT INTO workspace_member (workspace_id, user_id, role, joined_at) VALUES (?, ?, ?, now())")
+                .sql("INSERT INTO workspace_member (workspace_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)")
                 .param(workspaceId)
                 .param(userId)
                 .param(role)
+                .param(OffsetDateTime.ofInstant(clock.instant(), ZoneOffset.UTC))
                 .update();
     }
 
