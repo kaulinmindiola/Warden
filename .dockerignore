@@ -1,0 +1,23 @@
+# Only the sources the image build needs reach the Docker daemon.
+# Never send local configuration, keys or build output.
+
+.git/
+.github/
+.idea/
+.vscode/
+target/
+docs/
+ops/
+
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.log
+
+compose.yaml
+Dockerfile
+.dockerignore
+README.md
+CHANGELOG.md
