@@ -76,7 +76,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** Defines the observable reliability behaviour and library dependency on Boot 4.1 (RISK-005).
 - **Affected elements:** V09, V13, V14-A5, V17, V21; REQ-FUNC-055–057; REQ-REL-004–006; DEC-019, 041–043.
 - **Baseline direction:** In-attempt failover; Resilience4j core (no Boot starter); JDK HttpClient time limit; stored `next_attempt_at`; WireMock simulators.
-- **Status:** READY FOR ANALYSIS (after POC-001) · **Phase:** 4
+- **Status:** ACCEPTED — [ADR-009](ADR-009-provider-resilience.md) · **Phase:** 4
 
 ### ADR-010 — Virtual threads with explicitly bounded resources
 - **Description:** Request and worker threading model on Java 21.
