@@ -6,9 +6,12 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.json.JsonMapper;
 
-/** Creates providers A and B and orders them by {@code warden.notification.providers.primary}. */
+/**
+ * Creates providers A and B, ordered by {@code warden.notification.providers.primary}, and their
+ * circuit breakers.
+ */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(EmailProviderProperties.class)
+@EnableConfigurationProperties({EmailProviderProperties.class, CircuitBreakerProperties.class})
 class EmailProviderConfiguration {
 
     @Bean
@@ -29,5 +32,10 @@ class EmailProviderConfiguration {
         return "a".equals(properties.primary())
                 ? new EmailProviders(emailProviderA, emailProviderB)
                 : new EmailProviders(emailProviderB, emailProviderA);
+    }
+
+    @Bean
+    ProviderCircuitBreakers providerCircuitBreakers(CircuitBreakerProperties properties) {
+        return new ProviderCircuitBreakers(properties);
     }
 }

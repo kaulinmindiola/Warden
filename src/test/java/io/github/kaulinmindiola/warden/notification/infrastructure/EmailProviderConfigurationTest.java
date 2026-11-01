@@ -36,6 +36,18 @@ class EmailProviderConfigurationTest {
     }
 
     @Test
+    void theCircuitBreakersUseTheSrsValuesUnlessConfigured() {
+        runner.run(context -> assertThat(
+                        context.getBean(ProviderCircuitBreakers.class).config().getSlidingWindowSize())
+                .isEqualTo(20));
+        runner.withPropertyValues("warden.notification.circuit-breaker.sliding-window-size=40")
+                .run(context -> assertThat(context.getBean(ProviderCircuitBreakers.class)
+                                .config()
+                                .getSlidingWindowSize())
+                        .isEqualTo(40));
+    }
+
+    @Test
     void anUnknownPrimaryStopsTheStartup() {
         runner.withPropertyValues("warden.notification.providers.primary=c")
                 .run(context -> assertThat(context)
