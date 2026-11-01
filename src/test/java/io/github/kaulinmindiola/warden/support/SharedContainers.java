@@ -4,6 +4,8 @@ import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.testcontainers.containers.GenericContainer;
@@ -47,16 +49,23 @@ final class SharedContainers {
     private SharedContainers() {}
 
     static void registerProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", () -> "warden_app");
-        registry.add("spring.datasource.password", () -> APP_PASSWORD);
-        registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.flyway.user", () -> "warden_owner");
-        registry.add("spring.flyway.password", () -> OWNER_PASSWORD);
-        registry.add("spring.data.redis.host", REDIS::getHost);
-        registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(REDIS_PORT));
-        registry.add("warden.notification.providers.a-url", PROVIDER_A::baseUrl);
-        registry.add("warden.notification.providers.b-url", PROVIDER_B::baseUrl);
+        properties().forEach((name, value) -> registry.add(name, () -> value));
+    }
+
+    /** The connection properties of the shared infrastructure, for any application context. */
+    static Map<String, Object> properties() {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        properties.put("spring.datasource.url", POSTGRES.getJdbcUrl());
+        properties.put("spring.datasource.username", "warden_app");
+        properties.put("spring.datasource.password", APP_PASSWORD);
+        properties.put("spring.flyway.url", POSTGRES.getJdbcUrl());
+        properties.put("spring.flyway.user", "warden_owner");
+        properties.put("spring.flyway.password", OWNER_PASSWORD);
+        properties.put("spring.data.redis.host", REDIS.getHost());
+        properties.put("spring.data.redis.port", REDIS.getMappedPort(REDIS_PORT));
+        properties.put("warden.notification.providers.a-url", PROVIDER_A.baseUrl());
+        properties.put("warden.notification.providers.b-url", PROVIDER_B.baseUrl());
+        return properties;
     }
 
     private static PostgreSQLContainer createPostgres() {
