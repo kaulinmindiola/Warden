@@ -81,6 +81,16 @@ warden:
       capacity: 100
       window: 1d
 
+  # Simulated e-mail providers (REQ-INT-008, SDD V09): WireMock instances serving the mappings of
+  # ops/providers. The primary is tried first; the secondary takes over within the same attempt.
+  notification:
+    providers:
+      primary: ${WARDEN_PROVIDER_PRIMARY:a}
+      a-url: ${WARDEN_PROVIDER_A_URL:http://localhost:8091}
+      b-url: ${WARDEN_PROVIDER_B_URL:http://localhost:8092}
+      connect-timeout: 2s
+      request-timeout: 5s
+
 # One JSON object per log line, including traceId and spanId from the MDC (REQ-OBS-004, SDD V19).
 logging:
   structured:

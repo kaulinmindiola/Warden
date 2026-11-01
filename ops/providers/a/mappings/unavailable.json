@@ -1,0 +1,15 @@
+{
+  "priority": 1,
+  "request": {
+    "method": "POST",
+    "urlPath": "/v1/messages",
+    "bodyPatterns": [
+      { "matchesJsonPath": { "expression": "$.to", "matches": ".*@unavailable\\.test" } }
+    ]
+  },
+  "response": {
+    "status": 503,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "code": "unavailable" }
+  }
+}
