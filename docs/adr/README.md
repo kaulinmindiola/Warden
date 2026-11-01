@@ -69,7 +69,7 @@ This inventory plans the Architecture Decision Records of Warden release 1.0. It
 - **Reason:** G-03 depends on it; choosing a custom outbox over Spring Modulith's event publication registry needs justification.
 - **Affected elements:** V06, V10, V13, V16; REQ-REL-001, 002; DEC-007, DEC-018.
 - **Baseline direction:** Own `outbox_event` table; dispatcher with `FOR UPDATE SKIP LOCKED` running the handler in the same transaction.
-- **Status:** IN PROGRESS — [ADR-008](ADR-008-transactional-outbox.md) proposed; accepted when the dispatcher is verified (step 4.5) · **Phase:** 1 (write side) / 4 (dispatch)
+- **Status:** ACCEPTED — [ADR-008](ADR-008-transactional-outbox.md) · **Phase:** 1 (write side) / 4 (dispatch)
 
 ### ADR-009 — Provider resilience: failover, circuit breaker, timeouts and backoff
 - **Description:** How each delivery attempt combines two providers, breakers, time limits and retry spacing; includes how providers are simulated.

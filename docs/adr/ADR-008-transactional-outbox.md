@@ -1,9 +1,9 @@
 # ADR-008: Transactional outbox with at-least-once dispatch
 
-- Status: proposed
-- Date: 2026-10-25
+- Status: accepted
+- Date: 2026-10-31 (proposed 2026-10-25)
 - Deciders: Kaulin Mindiola
-- Related: REQ-REL-001, REQ-REL-002, REQ-FUNC-061, REQ-FUNC-063, REQ-MAINT-005, DEC-007, DEC-018, G-03; SDD V06, V10, V13, V16; ADR-011, ADR-015, ADR-017
+- Related: REQ-REL-001, REQ-REL-002, REQ-FUNC-061, REQ-FUNC-062, REQ-FUNC-063, REQ-MAINT-005, DEC-007, DEC-018, G-03; SDD V04 (R5), V06, V07, V10, V13, V16; ADR-011, ADR-015, ADR-017
 
 ## Context and Problem Statement
 
@@ -34,9 +34,9 @@ with several instances?
 
 ## Decision Outcome
 
-Proposed option: **1, own outbox table with a `SKIP LOCKED` dispatcher**.
+Chosen option: **1, own outbox table with a `SKIP LOCKED` dispatcher**.
 
-**Write side (implemented in step 1.7):**
+**Write side (step 1.7).**
 
 - `shared.outbox.OutboxPublisher.publish()` requires an active transaction
   (`Propagation.MANDATORY`). Without one it fails, so an event cannot exist without its state
@@ -44,19 +44,43 @@ Proposed option: **1, own outbox table with a `SKIP LOCKED` dispatcher**.
 - Envelope (SDD V10): UUIDv7 `eventId`, `module.EventName` type, `schemaVersion` starting at 1,
   `occurredAt` from the application clock, nullable `workspaceId`, `traceId`, and a JSON object
   payload serialized with the application JSON mapper.
-- Table `outbox_event` with a partial index `(occurred_at) WHERE published_at IS NULL`. No RLS:
-  only workers read it.
+- Table `outbox_event`, without RLS: only workers read it.
 
-**Dispatch side (phase 4, steps 4.4 and 4.5):**
+**Dispatch side (steps 4.2 to 4.5).**
 
-- Every 500 ms, `SELECT … WHERE published_at IS NULL ORDER BY occurred_at FOR UPDATE SKIP LOCKED
-  LIMIT 100`. The handler creates the deliveries with `ON CONFLICT DO NOTHING` on
-  `(event_id, recipient_key, channel)`, then sets `published_at` and strips `payload.secret`,
-  all in one transaction.
-- Published events are purged after 7 days (REQ-FUNC-063).
+- `shared.outbox.OutboxDispatcher.dispatchBatch()` runs in the caller's transaction
+  (`MANDATORY`): `SELECT … WHERE published_at IS NULL ORDER BY dispatch_order LIMIT 100 FOR UPDATE
+  SKIP LOCKED`, hands each event to every `OutboxEventHandler`, then sets `published_at` and strips
+  `payload.secret` in the same transaction.
+- The 500 ms tick and `runOnce()` live in `notification.application.worker.OutboxDispatchWorker`,
+  which opens that transaction with `TenantTransactions.system(…)`.
+- `notification.application.NotificationEventHandler` creates the deliveries with `ON CONFLICT
+  DO NOTHING` on `(event_id, recipient_key, channel)` and applies the cancellations of
+  `InvitationRevoked` and `WorkspaceDeleted` (REQ-FUNC-062).
 
-This ADR becomes `accepted` in step 4.5, when the dispatcher passes the restart test of
-REQ-REL-001 and the two-instance, 1,000-event test of REQ-REL-002.
+### Deviations from the SDD, decided during implementation
+
+1. **The tick lives in the notification worker, not in `shared`.** SDD V13 draws the loop in the
+   shared dispatcher, but the handler needs the system context to write `notification_delivery`
+   under RLS, and R5 (FF-03) allows only `notification.application.worker` to open it. The
+   dispatcher therefore requires an existing transaction and the worker opens it. R5 stays intact
+   and `shared` still depends on no module.
+2. **One savepoint per event.** A handler that throws rolls back only that event's writes; the
+   event stays pending with its secret, the rest of the batch is published, and
+   `warden.outbox.dispatch.failures` counts the failure. Without it, one event that always fails
+   would roll back every batch and stop the outbox. Limitation: an exception escaping from a
+   `@Transactional` bean marks the whole transaction for rollback; the dispatcher detects it and
+   the batch is retried. Handlers therefore write through `JdbcClient` and open no transactions,
+   as the `OutboxEventHandler` contract states.
+3. **Dispatch in insertion order (V17).** `occurred_at` and the UUIDv7 id give no order within a
+   millisecond, so a cancellation could be handed over before the invitation it cancels. An
+   identity column `dispatch_order` orders the events as they were written.
+4. **Ticks switched off per bean.** Every `@Scheduled` method lives in a schedule bean marked
+   `@ConditionalOnSchedulingEnabled`. `warden.scheduling.enabled=false` once skipped only the
+   application's `@EnableScheduling`, but a library on the classpath enables scheduling as well,
+   so the workers kept ticking in tests and dispatched the outbox under other tests.
+5. **Deliveries keep the key id of the sealed token** (`secret_key_id`) next to its ciphertext,
+   which ADR-011 needs for key rotation and the SDD data model did not list.
 
 ### Consequences
 
@@ -64,18 +88,32 @@ REQ-REL-001 and the two-instance, 1,000-event test of REQ-REL-002.
 - Good: `SKIP LOCKED` lets every instance dispatch concurrently without double-claiming a row.
 - Good: the payload is explicit JSON with a type and a version, independent of Java class names,
   so upcasters for version N−1 stay possible.
+- Good: deliveries and the publication of their event commit together, so event → delivery is
+  effectively exactly-once.
 - Bad: dispatch is at-least-once. A crash after the handler and before the commit repeats the
   work, so consumers must be idempotent (the unique delivery key provides this).
 - Bad: polling adds up to one interval of latency and constant light load on PostgreSQL.
+- Bad: an event whose handler always fails is retried every tick until fixed; it is visible
+  through the failure counter and the error log, which names the event and type only.
 - Bad: the table grows with traffic and needs the purge job.
 
 ### Confirmation
 
-- Implemented: `OutboxPublisherIT`. Publishing outside a transaction fails. A rollback removes
-  both the state change and the event. A commit stores every envelope field, and a sealed secret
-  keeps the `{ciphertext, keyId, expiresAt}` shape.
-- Pending for acceptance: the restart test (REQ-REL-001), the two-instance test (REQ-REL-002),
-  and the purge with a controlled clock (REQ-FUNC-063).
+- `OutboxPublisherIT`: publishing outside a transaction fails; a rollback removes both the state
+  change and the event; a commit stores every envelope field.
+- `OutboxDispatcherIT`: an event committed while no dispatcher runs is dispatched by an
+  application started afterwards (REQ-REL-001); the secret is handed to the handler and then
+  removed (REQ-SEC-005); a failing event stays pending without holding back the batch; two
+  concurrent dispatchers hand each of 250 events over exactly once.
+- `NotificationFanoutIT`: the same event handed over three times creates one delivery per
+  recipient (REQ-FUNC-061).
+- `DeliveryCancellationIT` and `NotificationCriteriaIT`: revoked, replaced and deleted-workspace
+  deliveries end `CANCELLED` without their token, also when the cancellation is in the same batch
+  as the invitation (REQ-FUNC-062, D-03 re-verification).
+- `WorkerSchedulesIT`: no worker is scheduled on the test classpath.
+- Re-confirmed later in the phase; a failure reopens this ADR: two application instances with
+  1,000 events (REQ-REL-002, step 4.14) and the purge of published events with a controlled clock
+  (REQ-FUNC-063, step 4.15).
 
 ## Pros and Cons of the Options
 
