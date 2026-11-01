@@ -160,7 +160,7 @@ public final class IamTestClient {
                         FROM outbox_event
                         WHERE type = ?
                           AND payload -> 'recipient' ->> 'userId' = ?
-                        ORDER BY occurred_at DESC
+                        ORDER BY dispatch_order DESC
                         LIMIT 1
                         """).param(eventType).param(userId.toString()).query().singleRow();
         return secretCipher.open(new SealedSecret(

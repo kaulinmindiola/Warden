@@ -110,7 +110,7 @@ class SecretsAtRestIT extends IntegrationTest {
                         WHERE jsonb_exists(payload, 'secret')
                           AND (payload -> 'recipient' ->> 'userId' = ?
                                OR payload ->> 'invitationId' = ?)
-                        ORDER BY occurred_at
+                        ORDER BY dispatch_order
                         """)
                 .param(issued.userId().toString())
                 .param(issued.invitationId().toString())
