@@ -1,5 +1,6 @@
 package io.github.kaulinmindiola.warden.shared.outbox;
 
+import io.github.kaulinmindiola.warden.shared.logging.LogFields;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -41,7 +43,8 @@ import org.springframework.transaction.interceptor.TransactionAspectSupport;
  *
  * <p>The time from an event's occurrence to its publication is recorded in {@code
  * warden_outbox_lag_seconds}, a histogram with a bucket at the 5 s target of REQ-PERF-004
- * (REQ-OBS-002).
+ * (REQ-OBS-002). Every log line about an event, those of its handlers included, carries {@code
+ * originTraceId}, the trace of the request that stored it (REQ-OBS-006).
  */
 @Component
 public class OutboxDispatcher {
@@ -120,6 +123,15 @@ public class OutboxDispatcher {
     }
 
     private boolean dispatch(DomainEvent event) {
+        MDC.put(LogFields.ORIGIN_TRACE_ID, event.traceId());
+        try {
+            return dispatchCorrelated(event);
+        } finally {
+            MDC.remove(LogFields.ORIGIN_TRACE_ID);
+        }
+    }
+
+    private boolean dispatchCorrelated(DomainEvent event) {
         jdbc.sql("SAVEPOINT outbox_dispatch").update();
         try {
             handlers.orderedStream().forEach(handler -> handler.handle(event));
@@ -147,6 +159,7 @@ public class OutboxDispatcher {
                 .update();
         Duration sinceOccurrence = Duration.between(event.occurredAt(), publishedAt);
         lag.record(sinceOccurrence.isNegative() ? Duration.ZERO : sinceOccurrence);
+        log.info("Outbox event {} of type {} published", event.eventId(), event.type());
         return true;
     }
 

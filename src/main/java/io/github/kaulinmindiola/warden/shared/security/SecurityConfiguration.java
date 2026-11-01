@@ -16,6 +16,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 
 /**
  * Stateless, deny-by-default security (REQ-SEC-001, SDD V11, V18).
@@ -91,7 +92,8 @@ public class SecurityConfiguration {
                         .jwt(jwt -> jwt.authenticationManager(new ProviderManager(jwtProvider))))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(authenticationEntryPoint)
-                        .accessDeniedHandler(accessDeniedHandler));
+                        .accessDeniedHandler(accessDeniedHandler))
+                .addFilterAfter(new LogContextFilter(), AnonymousAuthenticationFilter.class);
         return http.build();
     }
 

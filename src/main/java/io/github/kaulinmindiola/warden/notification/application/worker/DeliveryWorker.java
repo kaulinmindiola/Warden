@@ -18,6 +18,7 @@ import io.github.kaulinmindiola.warden.notification.infrastructure.LinkBuilder;
 import io.github.kaulinmindiola.warden.notification.infrastructure.NotificationTemplateRepository;
 import io.github.kaulinmindiola.warden.shared.crypto.SealedSecret;
 import io.github.kaulinmindiola.warden.shared.crypto.SecretCipher;
+import io.github.kaulinmindiola.warden.shared.logging.LogFields;
 import io.github.kaulinmindiola.warden.shared.tenancy.TenantTransactions;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
@@ -33,6 +34,7 @@ import java.util.concurrent.Semaphore;
 import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Component;
 
 /**
@@ -50,6 +52,9 @@ import org.springframework.stereotype.Component;
  *
  * <p>A worker that dies after a provider accepted a message leaves the lease to lapse; the delivery
  * is then claimed and sent again with the same idempotency key, its id (at-least-once, ADR-009).
+ *
+ * <p>Every log line about a delivery carries {@code originTraceId}, the trace of the request that
+ * produced it, and each recorded result is logged without the recipient (REQ-OBS-005, 006).
  */
 @Component
 public class DeliveryWorker {
@@ -154,6 +159,15 @@ public class DeliveryWorker {
 
     /** Composes, sends and records one claimed delivery; never throws. */
     void attempt(ClaimedDelivery claimed) {
+        MDC.put(LogFields.ORIGIN_TRACE_ID, claimed.originTraceId());
+        try {
+            sendAndRecord(claimed);
+        } finally {
+            MDC.remove(LogFields.ORIGIN_TRACE_ID);
+        }
+    }
+
+    private void sendAndRecord(ClaimedDelivery claimed) {
         try {
             Optional<EmailMessage> message;
             try {
@@ -217,16 +231,25 @@ public class DeliveryWorker {
      * while it was being sent stays CANCELLED (SDD V13).
      */
     private void record(UUID id, Consumer<Delivery> change) {
-        DeliveryStatus reached = transactions.system(() -> {
+        Optional<Delivery> recorded = transactions.system(() -> {
             Optional<Delivery> current = deliveries.lockState(id);
             if (current.isEmpty() || current.get().status() == DeliveryStatus.CANCELLED) {
-                return DeliveryStatus.CANCELLED;
+                return Optional.<Delivery>empty();
             }
             Delivery delivery = current.get();
             change.accept(delivery);
             deliveries.saveState(delivery);
-            return delivery.status();
+            return Optional.of(delivery);
         });
+        DeliveryStatus reached = recorded.map(Delivery::status).orElse(DeliveryStatus.CANCELLED);
         meterRegistry.counter(OUTCOME_METRIC, "status", reached.name()).increment();
+        recorded.ifPresentOrElse(
+                delivery -> log.info(
+                        "Delivery {} is {} after {} attempts (provider {})",
+                        id,
+                        delivery.status(),
+                        delivery.attempts(),
+                        delivery.providerUsed()),
+                () -> log.info("Delivery {} was cancelled meanwhile; the result is not recorded", id));
     }
 }

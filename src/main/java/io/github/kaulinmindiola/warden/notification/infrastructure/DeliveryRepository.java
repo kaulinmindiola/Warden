@@ -76,7 +76,7 @@ public class DeliveryRepository {
                 LIMIT :limit
                 FOR UPDATE SKIP LOCKED)
             RETURNING id, template_key, locale, template_version, recipient_email, variables::text AS variables,
-                      secret_ciphertext, secret_key_id, secret_expires_at
+                      secret_ciphertext, secret_key_id, secret_expires_at, origin_trace_id
             """;
 
     private static final String LOCK_STATE = """
@@ -327,7 +327,8 @@ public class DeliveryRepository {
                 row.getInt("template_version"),
                 row.getString("recipient_email"),
                 jsonMapper.readValue(row.getString("variables"), VARIABLES),
-                secret);
+                secret,
+                row.getString("origin_trace_id"));
     }
 
     private static DeliveryView toView(ResultSet row, int rowNumber) throws SQLException {

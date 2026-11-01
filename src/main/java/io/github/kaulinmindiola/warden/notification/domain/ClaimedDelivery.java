@@ -14,6 +14,7 @@ import java.util.UUID;
  * @param templateVersion the pinned template version (REQ-FUNC-053)
  * @param variables the template values known at creation
  * @param secret the sealed link token, or {@code null} when there is none or it was discarded
+ * @param originTraceId the trace of the request that produced the delivery's event (REQ-OBS-006)
  */
 public record ClaimedDelivery(
         UUID id,
@@ -22,13 +23,15 @@ public record ClaimedDelivery(
         int templateVersion,
         String recipientEmail,
         Map<String, String> variables,
-        SealedSecret secret) {
+        SealedSecret secret,
+        String originTraceId) {
 
     public ClaimedDelivery {
         Objects.requireNonNull(id, "id");
         Objects.requireNonNull(templateKey, "templateKey");
         Objects.requireNonNull(locale, "locale");
         Objects.requireNonNull(recipientEmail, "recipientEmail");
+        Objects.requireNonNull(originTraceId, "originTraceId");
         variables = Map.copyOf(variables);
     }
 
