@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.kaulinmindiola.warden.notification.application.worker.DeliveryWorker;
+import io.github.kaulinmindiola.warden.notification.application.worker.OutboxDispatchWorker;
 import io.github.kaulinmindiola.warden.shared.crypto.SealedSecret;
 import io.github.kaulinmindiola.warden.shared.crypto.SecretCipher;
 import io.github.kaulinmindiola.warden.shared.crypto.SecureTokenGenerator;
@@ -45,8 +47,9 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  * workspace with a note, an accepted and a pending invitation, and a password reset. Every
  * response of the flow is recorded, the writes included, and then every read endpoint is called.
  * The secrets are searched in the status line, the headers and the body of each response; hashes
- * are searched in hexadecimal and in both Base64 alphabets. Rendered notification content does not
- * exist until phase 4.
+ * are searched in hexadecimal and in both Base64 alphabets. Before the reads, the notification
+ * pipeline runs: the deliveries of the flow are created and sent, so their rendered content and
+ * links exist while the delivery listing is scanned.
  *
  * <p>{@link #READS} must list every GET endpoint of the API, which the handler mapping checks, so
  * a new read endpoint fails the build until it is scanned.
@@ -73,6 +76,9 @@ class SecretsInResponsesIT extends IntegrationTest {
                 API + "/workspaces/{workspaceId}/notes/{noteId}",
                 ids -> API + "/workspaces/" + ids.workspaceId() + "/notes/" + ids.noteId());
         READS.put(API + "/me/notification-preferences", ids -> API + "/me/notification-preferences");
+        READS.put(
+                API + "/workspaces/{workspaceId}/notifications/deliveries",
+                ids -> API + "/workspaces/" + ids.workspaceId() + "/notifications/deliveries");
     }
 
     @Autowired
@@ -80,6 +86,12 @@ class SecretsInResponsesIT extends IntegrationTest {
 
     @Autowired
     private SecretCipher secretCipher;
+
+    @Autowired
+    private OutboxDispatchWorker outboxWorker;
+
+    @Autowired
+    private DeliveryWorker deliveryWorker;
 
     @Autowired
     @Qualifier("requestMappingHandlerMapping")
@@ -223,6 +235,12 @@ class SecretsInResponsesIT extends IntegrationTest {
                 iam.postJson(API + "/auth/refresh", Map.of("refresh_token", ownerRefresh), null)
                         .andExpect(status().isUnauthorized()));
         record("GET sessions with a revoked token", iam.get(API + "/auth/sessions", firstAccess));
+        while (outboxWorker.runOnce() > 0) {
+            // create the deliveries of every event of the flow
+        }
+        while (deliveryWorker.runOnce() > 0) {
+            // render and send them, links included
+        }
         return new Ids(workspaceId, noteId);
     }
 

@@ -32,6 +32,8 @@ public final class IsolationRegistry {
     private static final String INVITATION = INVITATIONS + "/{invitationId}";
     private static final String NOTES = WORKSPACE_ROUTE + "/notes";
     private static final String NOTE = NOTES + "/{noteId}";
+    private static final String DELIVERIES = WORKSPACE_ROUTE + "/notifications/deliveries";
+    private static final String DELIVERY_RETRY = DELIVERIES + "/{deliveryId}/retry";
     private static final String NEW_NOTE = "{\"title\":\"Registry note\",\"body\":\"Body\"}";
     private static final String EDITED_NOTE = "{\"title\":\"Edited\",\"body\":\"Body\",\"version\":0}";
     private static final String DEMOTE_TO_VIEWER = "{\"role\":\"VIEWER\"}";
@@ -128,7 +130,20 @@ public final class IsolationRegistry {
                     NOTE,
                     Role.MEMBER,
                     204,
-                    target -> MockMvcRequestBuilders.delete(NOTE, target.workspaceId(), target.newNote())));
+                    target -> MockMvcRequestBuilders.delete(NOTE, target.workspaceId(), target.newNote())),
+            new WorkspaceEndpoint(
+                    HttpMethod.GET,
+                    DELIVERIES,
+                    Role.ADMIN,
+                    200,
+                    target -> MockMvcRequestBuilders.get(DELIVERIES, target.workspaceId())),
+            new WorkspaceEndpoint(
+                    HttpMethod.POST,
+                    DELIVERY_RETRY,
+                    Role.ADMIN,
+                    202,
+                    target -> MockMvcRequestBuilders.post(
+                            DELIVERY_RETRY, target.workspaceId(), target.newDeadDelivery())));
 
     private IsolationRegistry() {}
 

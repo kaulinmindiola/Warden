@@ -3,6 +3,7 @@ package io.github.kaulinmindiola.warden.notification.application;
 import io.github.kaulinmindiola.warden.notification.application.EventPayloads.AccountLink;
 import io.github.kaulinmindiola.warden.notification.application.EventPayloads.AccountNotice;
 import io.github.kaulinmindiola.warden.notification.application.EventPayloads.Invitation;
+import io.github.kaulinmindiola.warden.notification.application.EventPayloads.InvitationAccepted;
 import io.github.kaulinmindiola.warden.notification.application.EventPayloads.InvitationRevoked;
 import io.github.kaulinmindiola.warden.notification.application.EventPayloads.Recipient;
 import io.github.kaulinmindiola.warden.notification.application.EventPayloads.RoleChanged;
@@ -48,9 +49,10 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>{@code workspace.InvitationRevoked} (revoked or replaced) and {@code workspace.WorkspaceDeleted}
  * cancel the unsent deliveries of the invitation or of the workspace and drop their sealed tokens
- * (REQ-FUNC-062). Events are dispatched in insertion order, so a cancellation finds the
- * deliveries of the events published before it, even within the same batch. Cancelling twice changes nothing. Other
- * event types, such as {@code workspace.InvitationAccepted} or those of other consumers, create
+ * (REQ-FUNC-062). {@code workspace.InvitationAccepted} does the same for the invitation, so a dead
+ * delivery of a used invitation can no longer be retried (REQ-FUNC-060). Events are dispatched in
+ * insertion order, so a cancellation finds the deliveries of the events published before it, even
+ * within the same batch. Cancelling twice changes nothing. Event types of other consumers create
  * nothing here.
  */
 @Component
@@ -65,6 +67,7 @@ public class NotificationEventHandler implements OutboxEventHandler {
     static final String MEMBER_ROLE_CHANGED = "workspace.MemberRoleChanged";
     static final String INVITATION_REVOKED = "workspace.InvitationRevoked";
     static final String WORKSPACE_DELETED = "workspace.WorkspaceDeleted";
+    static final String INVITATION_ACCEPTED = "workspace.InvitationAccepted";
 
     private static final Set<String> LOCALES = Set.of("es", "en");
     private static final String DEFAULT_LOCALE = "es";
@@ -105,6 +108,11 @@ public class NotificationEventHandler implements OutboxEventHandler {
             case INVITATION_REVOKED -> {
                 deliveries.cancelUnsentOfInvitation(
                         read(event, InvitationRevoked.class).invitationId());
+                return;
+            }
+            case INVITATION_ACCEPTED -> {
+                deliveries.cancelUnsentOfInvitation(
+                        read(event, InvitationAccepted.class).invitationId());
                 return;
             }
             case WORKSPACE_DELETED -> {

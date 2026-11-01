@@ -57,6 +57,10 @@ final class EventPayloads {
     @JsonIgnoreProperties(ignoreUnknown = true)
     record InvitationRevoked(UUID invitationId, String reason) {}
 
+    /** {@code workspace.InvitationAccepted}: the invitation was used to join its workspace. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record InvitationAccepted(UUID invitationId) {}
+
     /** {@code workspace.MemberRoleChanged}: the owners are those at the time of the change. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     record RoleChanged(

@@ -42,15 +42,14 @@ import org.springframework.web.context.WebApplicationContext;
  * <p>Each case uses fresh accounts, so the records of a case are found by action and actor. The
  * test clock stands still, so every record carries exactly its instant.
  *
- * <p>Template changes and dead-letter retries have no operation yet: their endpoints arrive in
- * phase 4 (REQ-FUNC-052, REQ-FUNC-025). They are listed in {@link #ARRIVING_IN_PHASE_4}, and a
- * test fails if an action is neither covered here nor listed there.
+ * <p>Template changes have no operation yet: workspace template customization arrives with release
+ * 1.1 (REQ-FUNC-054, D-01). It is listed in {@link #ARRIVING_IN_PHASE_4}, and a test fails if an
+ * action is neither covered here nor listed there.
  */
 class AuditCompletenessIT extends IntegrationTest {
 
     /** Actions whose operations do not exist yet; phase 4 moves them into {@link #cases()}. */
-    static final Set<AuditAction> ARRIVING_IN_PHASE_4 =
-            EnumSet.of(AuditAction.TEMPLATE_CHANGED, AuditAction.DELIVERY_RETRIED);
+    static final Set<AuditAction> ARRIVING_IN_PHASE_4 = EnumSet.of(AuditAction.TEMPLATE_CHANGED);
 
     private static final String WRONG_PASSWORD = "not the right password";
     private static final String NEW_PASSWORD = "a brand new correct horse";
@@ -88,7 +87,8 @@ class AuditCompletenessIT extends IntegrationTest {
                 new AuditCase(
                         AuditAction.INVITATION_ACCEPTED, AuditOutcome.SUCCESS, AuditCompletenessIT::acceptInvitation),
                 new AuditCase(
-                        AuditAction.WORKSPACE_DELETED, AuditOutcome.SUCCESS, AuditCompletenessIT::deleteWorkspace));
+                        AuditAction.WORKSPACE_DELETED, AuditOutcome.SUCCESS, AuditCompletenessIT::deleteWorkspace),
+                new AuditCase(AuditAction.DELIVERY_RETRIED, AuditOutcome.SUCCESS, AuditCompletenessIT::retryDelivery));
     }
 
     @BeforeEach
@@ -259,6 +259,18 @@ class AuditCompletenessIT extends IntegrationTest {
         return new Performed(owner.userId(), owner.workspaceId(), List.of(owner.accessToken()));
     }
 
+    private Performed retryDelivery() throws Exception {
+        Owner owner = newOwner();
+        UUID deliveryId = seedDeadDelivery(owner.workspaceId());
+        iam.postJson(
+                        API + "/workspaces/" + owner.workspaceId() + "/notifications/deliveries/" + deliveryId
+                                + "/retry",
+                        Map.of(),
+                        owner.accessToken())
+                .andExpect(status().isAccepted());
+        return new Performed(owner.userId(), owner.workspaceId(), List.of(owner.accessToken()));
+    }
+
     // Helpers
 
     /** A verified account, logged in, that owns a new workspace. */
@@ -310,6 +322,31 @@ class AuditCompletenessIT extends IntegrationTest {
         return secretCipher.open(new SealedSecret(
                 (String) secret.get("ciphertext"), (String) secret.get("key_id"), Instant.parse((String)
                         secret.get("expires_at"))));
+    }
+
+    /** A role-change notice of the workspace that failed five times, seeded as the superuser. */
+    private static UUID seedDeadDelivery(UUID workspaceId) {
+        UUID deliveryId = UUID.randomUUID();
+        superuser()
+                .sql("""
+                        INSERT INTO notification_delivery (
+                            id, event_id, recipient_key, channel, scope, workspace_id, template_key, locale,
+                            template_version, recipient_email, variables, status, attempts, next_attempt_at,
+                            provider_used, last_error_class, origin_trace_id, created_at)
+                        VALUES (?, ?, ?, 'EMAIL', 'WORKSPACE', ?, 'workspace.role-changed', 'es',
+                                1, ?, CAST(? AS jsonb), 'DEAD', 5, now(),
+                                'B', 'TRANSIENT_FAILURE', 'seeded', now())
+                        """)
+                .param(deliveryId)
+                .param(UUID.randomUUID())
+                .param("email:seeded-" + deliveryId)
+                .param(workspaceId)
+                .param("seeded-" + deliveryId + "@mail.test")
+                .param("""
+                        {"workspaceName": "Audited", "affectedMember": "member@mail.test",
+                         "previousRole": "MEMBER", "newRole": "ADMIN"}""")
+                .update();
+        return deliveryId;
     }
 
     private static List<AuditRecord> records(AuditAction action, UUID actorId) {
