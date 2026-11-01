@@ -3,6 +3,7 @@ package io.github.kaulinmindiola.warden.notification.infrastructure;
 import io.github.kaulinmindiola.warden.notification.domain.ClaimedDelivery;
 import io.github.kaulinmindiola.warden.notification.domain.Delivery;
 import io.github.kaulinmindiola.warden.notification.domain.DeliveryStatus;
+import io.github.kaulinmindiola.warden.notification.domain.DeliveryView;
 import io.github.kaulinmindiola.warden.notification.domain.NewDelivery;
 import io.github.kaulinmindiola.warden.shared.crypto.SealedSecret;
 import java.sql.ResultSet;
@@ -16,6 +17,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.jdbc.core.SqlParameterValue;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -101,6 +105,35 @@ public class DeliveryRepository {
             UPDATE notification_delivery
             SET secret_ciphertext = NULL, secret_key_id = NULL
             WHERE secret_ciphertext IS NOT NULL AND secret_expires_at <= :now
+            """;
+
+    /** Workspace deliveries, newest first, optionally of one state; never their content. */
+    private static final String FIND_OF_WORKSPACE = """
+            SELECT id, template_key, recipient_email, status, attempts, provider_used, last_error_class,
+                   created_at, next_attempt_at, sent_at
+            FROM notification_delivery
+            WHERE workspace_id = :workspaceId AND (CAST(:status AS text) IS NULL OR status = :status)
+            ORDER BY created_at DESC, id DESC
+            LIMIT :limit OFFSET :offset
+            """;
+
+    private static final String COUNT_OF_WORKSPACE = """
+            SELECT count(*)
+            FROM notification_delivery
+            WHERE workspace_id = :workspaceId AND (CAST(:status AS text) IS NULL OR status = :status)
+            """;
+
+    /**
+     * A workspace delivery locked for a manual retry, with what decides whether its invitation link
+     * can still be used: present and not expired.
+     */
+    private static final String LOCK_FOR_RETRY = """
+            SELECT id, workspace_id, status, attempts, next_attempt_at, provider_used, last_error_class, sent_at,
+                   invitation_id,
+                   secret_ciphertext IS NOT NULL AND secret_expires_at > :now AS link_usable
+            FROM notification_delivery
+            WHERE id = :id AND workspace_id = :workspaceId
+            FOR UPDATE
             """;
 
     private static final TypeReference<Map<String, String>> VARIABLES = new TypeReference<>() {};
@@ -195,6 +228,40 @@ public class DeliveryRepository {
     }
 
     /**
+     * The deliveries of a workspace, newest first, optionally only those in {@code status}
+     * (REQ-FUNC-059). System-scope deliveries have no workspace and never appear.
+     */
+    public Page<DeliveryView> findOfWorkspace(UUID workspaceId, DeliveryStatus status, Pageable pageable) {
+        SqlParameterValue statusValue = new SqlParameterValue(Types.VARCHAR, status == null ? null : status.name());
+        List<DeliveryView> items = jdbc.sql(FIND_OF_WORKSPACE)
+                .param("workspaceId", workspaceId)
+                .param("status", statusValue)
+                .param("limit", pageable.getPageSize())
+                .param("offset", pageable.getOffset())
+                .query(DeliveryRepository::toView)
+                .list();
+        long total = jdbc.sql(COUNT_OF_WORKSPACE)
+                .param("workspaceId", workspaceId)
+                .param("status", statusValue)
+                .query(Long.class)
+                .single();
+        return new PageImpl<>(items, pageable, total);
+    }
+
+    /** A workspace delivery locked until the end of the transaction, for a manual retry. */
+    public Optional<RetryCandidate> lockForRetry(UUID workspaceId, UUID id, Instant now) {
+        return jdbc.sql(LOCK_FOR_RETRY)
+                .param("id", id)
+                .param("workspaceId", workspaceId)
+                .param("now", utc(now))
+                .query((row, rowNumber) -> new RetryCandidate(
+                        toDelivery(row, rowNumber),
+                        row.getObject("invitation_id", UUID.class),
+                        row.getBoolean("link_usable")))
+                .optional();
+    }
+
+    /**
      * Drops every sealed token that has expired at {@code now}.
      *
      * @return how many tokens were dropped
@@ -243,6 +310,25 @@ public class DeliveryRepository {
                 secret);
     }
 
+    private static DeliveryView toView(ResultSet row, int rowNumber) throws SQLException {
+        return new DeliveryView(
+                row.getObject("id", UUID.class),
+                row.getString("template_key"),
+                row.getString("recipient_email"),
+                DeliveryStatus.valueOf(row.getString("status")),
+                row.getInt("attempts"),
+                row.getString("provider_used"),
+                row.getString("last_error_class"),
+                instant(row, "created_at"),
+                instant(row, "next_attempt_at"),
+                instant(row, "sent_at"));
+    }
+
+    private static Instant instant(ResultSet row, String column) throws SQLException {
+        OffsetDateTime value = row.getObject(column, OffsetDateTime.class);
+        return value == null ? null : value.toInstant();
+    }
+
     private static Delivery toDelivery(ResultSet row, int rowNumber) throws SQLException {
         OffsetDateTime sentAt = row.getObject("sent_at", OffsetDateTime.class);
         return Delivery.restore(
@@ -259,4 +345,12 @@ public class DeliveryRepository {
     private static OffsetDateTime utc(Instant instant) {
         return OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
     }
+
+    /**
+     * A delivery about to be retried by hand.
+     *
+     * @param invitationId the invitation it belongs to, or {@code null}
+     * @param linkUsable whether it still holds a sealed token that has not expired
+     */
+    public record RetryCandidate(Delivery delivery, UUID invitationId, boolean linkUsable) {}
 }

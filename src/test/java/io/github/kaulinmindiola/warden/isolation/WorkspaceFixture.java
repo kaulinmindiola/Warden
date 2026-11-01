@@ -81,6 +81,11 @@ record WorkspaceFixture(
             public UUID newInvitation() {
                 return known ? seedInvitation(workspaceId) : UUID.randomUUID();
             }
+
+            @Override
+            public UUID newDeadDelivery() {
+                return known ? seedDeadDelivery(workspaceId) : UUID.randomUUID();
+            }
         };
     }
 
@@ -144,6 +149,31 @@ record WorkspaceFixture(
                 .param(ownerId)
                 .update();
         return invitationId;
+    }
+
+    /** A role-change notice that failed five times, as the delivery worker would leave it. */
+    private UUID seedDeadDelivery(UUID workspaceId) {
+        UUID deliveryId = UUID.randomUUID();
+        superuser
+                .sql("""
+                        INSERT INTO notification_delivery (
+                            id, event_id, recipient_key, channel, scope, workspace_id, template_key, locale,
+                            template_version, recipient_email, variables, status, attempts, next_attempt_at,
+                            provider_used, last_error_class, origin_trace_id, created_at)
+                        VALUES (?, ?, ?, 'EMAIL', 'WORKSPACE', ?, 'workspace.role-changed', 'es',
+                                1, ?, CAST(? AS jsonb), 'DEAD', 5, now(),
+                                'B', 'TRANSIENT_FAILURE', 'seeded', now())
+                        """)
+                .param(deliveryId)
+                .param(UUID.randomUUID())
+                .param("email:seeded-" + deliveryId)
+                .param(workspaceId)
+                .param("seeded-" + deliveryId + "@mail.test")
+                .param("""
+                        {"workspaceName": "Seeded", "affectedMember": "member@mail.test",
+                         "previousRole": "MEMBER", "newRole": "ADMIN"}""")
+                .update();
+        return deliveryId;
     }
 
     private static UUID createWorkspace(IamTestClient iam, String accessToken, String name) throws Exception {

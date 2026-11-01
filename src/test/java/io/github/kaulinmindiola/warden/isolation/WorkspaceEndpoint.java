@@ -34,6 +34,9 @@ public record WorkspaceEndpoint(
 
         /** A new pending invitation of the workspace. */
         UUID newInvitation();
+
+        /** A new DEAD workspace-scope delivery of the workspace, without invitation. */
+        UUID newDeadDelivery();
     }
 
     /** Builds a request against a target. */
