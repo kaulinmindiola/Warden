@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
 import io.github.kaulinmindiola.warden.iam.infrastructure.RevocationReconciler;
+import io.github.kaulinmindiola.warden.notification.application.worker.DeliveryWorker;
 import io.github.kaulinmindiola.warden.notification.application.worker.OutboxDispatchWorker;
 import io.github.kaulinmindiola.warden.shared.audit.AuditRetention;
 import org.junit.jupiter.api.Test;
@@ -17,12 +18,14 @@ class WorkerSchedulesTest {
 
     private static final String[] SCHEDULES = {
         "io.github.kaulinmindiola.warden.notification.application.worker.OutboxDispatchSchedule",
+        "io.github.kaulinmindiola.warden.notification.application.worker.DeliveryWorkerSchedule",
         "io.github.kaulinmindiola.warden.iam.infrastructure.RevocationReconcileSchedule",
         "io.github.kaulinmindiola.warden.shared.audit.AuditPurgeSchedule"
     };
 
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withBean(OutboxDispatchWorker.class, () -> mock(OutboxDispatchWorker.class))
+            .withBean(DeliveryWorker.class, () -> mock(DeliveryWorker.class))
             .withBean(RevocationReconciler.class, () -> mock(RevocationReconciler.class))
             .withBean(AuditRetention.class, () -> mock(AuditRetention.class))
             .withUserConfiguration(scheduleClasses());

@@ -162,6 +162,29 @@ class DeliveryTest {
     }
 
     @Test
+    void aDeliveryThatCannotBeComposedIsAbandonedWithoutCountingAnAttempt() {
+        Delivery delivery = inState(RETRYING);
+
+        delivery.abandon("LINK_EXPIRED");
+
+        assertThat(delivery.status()).isEqualTo(DEAD);
+        assertThat(delivery.attempts()).isEqualTo(1);
+        assertThat(delivery.lastErrorClass()).isEqualTo("LINK_EXPIRED");
+    }
+
+    @ParameterizedTest
+    @EnumSource(
+            value = DeliveryStatus.class,
+            names = {"SENT", "DEAD", "CANCELLED"})
+    @Verifies("REQ-FUNC-058")
+    void onlyADeliveryThatMayStillBeSentCanBeAbandoned(DeliveryStatus status) {
+        Delivery delivery = inState(status);
+
+        assertThatThrownBy(() -> delivery.abandon("LINK_EXPIRED")).isInstanceOf(IllegalStateTransitionException.class);
+        assertThat(delivery.status()).isEqualTo(status);
+    }
+
+    @Test
     void theAttemptsOfAStoredDeliveryAreBounded() {
         assertThatThrownBy(() -> Delivery.restore(UUID.randomUUID(), null, PENDING, -1, NOW, null, null, null))
                 .isInstanceOf(IllegalArgumentException.class);

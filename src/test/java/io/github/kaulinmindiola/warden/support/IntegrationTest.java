@@ -1,5 +1,6 @@
 package io.github.kaulinmindiola.warden.support;
 
+import com.github.tomakehurst.wiremock.WireMockServer;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
@@ -41,6 +42,16 @@ public abstract class IntegrationTest {
     @BeforeEach
     protected void resetClock() {
         clock.reset();
+    }
+
+    /** The simulated e-mail provider A, primary by default; its journal records every message. */
+    protected static WireMockServer providerA() {
+        return SharedContainers.PROVIDER_A;
+    }
+
+    /** The simulated e-mail provider B, the secondary by default. */
+    protected static WireMockServer providerB() {
+        return SharedContainers.PROVIDER_B;
     }
 
     /** Non-pooled connections as {@code warden_owner}, the role that owns every schema object. */

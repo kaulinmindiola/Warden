@@ -53,6 +53,14 @@ public class ProviderCircuitBreakers {
         return breaker(provider).getState();
     }
 
+    /**
+     * Closes every breaker and forgets the calls it recorded. For tests that share one application
+     * context, so that the failures one test provokes do not open a breaker for the next.
+     */
+    public void reset() {
+        registry.getAllCircuitBreakers().forEach(CircuitBreaker::reset);
+    }
+
     /** The configuration every breaker uses. */
     public CircuitBreakerConfig config() {
         return registry.getDefaultConfig();

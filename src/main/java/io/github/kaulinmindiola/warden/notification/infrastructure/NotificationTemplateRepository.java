@@ -20,6 +20,12 @@ public class NotificationTemplateRepository {
             LIMIT 1
             """;
 
+    private static final String FIND_GLOBAL_VERSION = """
+            SELECT template_key, locale, version, subject, body
+            FROM notification_template
+            WHERE scope = 'GLOBAL' AND template_key = :key AND locale = :locale AND version = :version
+            """;
+
     private static final String FIND_ALL_GLOBAL = """
             SELECT template_key, locale, version, subject, body
             FROM notification_template
@@ -41,6 +47,16 @@ public class NotificationTemplateRepository {
         return jdbc.sql(FIND_GLOBAL)
                 .param("key", key)
                 .param("locale", locale)
+                .query(NotificationTemplateRepository::toTemplate)
+                .optional();
+    }
+
+    /** The global template a delivery pinned at creation (REQ-FUNC-053). */
+    public Optional<Template> findGlobalVersion(String key, String locale, int version) {
+        return jdbc.sql(FIND_GLOBAL_VERSION)
+                .param("key", key)
+                .param("locale", locale)
+                .param("version", version)
                 .query(NotificationTemplateRepository::toTemplate)
                 .optional();
     }

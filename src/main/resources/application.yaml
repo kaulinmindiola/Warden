@@ -104,6 +104,18 @@ warden:
       verify-email: ${WARDEN_LINK_VERIFY_EMAIL_URL:http://localhost:3001/verify-email}
       reset-password: ${WARDEN_LINK_RESET_PASSWORD_URL:http://localhost:3001/reset-password}
       accept-invitation: ${WARDEN_LINK_ACCEPT_INVITATION_URL:http://localhost:3001/accept-invitation}
+    # Delivery worker (SDD V14-A5): each tick leases a batch of due deliveries for 30 s and sends
+    # up to 8 at a time. Waits between attempts: min(max, initial * multiplier^(n-1)) +/- jitter,
+    # that is 1, 2, 4 and 8 s within +/-50 % (REQ-REL-006); the 5th failure is DEAD.
+    delivery:
+      concurrency: 8
+      batch-size: 16
+      lease: 30s
+      backoff:
+        initial: 1s
+        multiplier: 2
+        max: 60s
+        jitter: 0.5
 
 # One JSON object per log line, including traceId and spanId from the MDC (REQ-OBS-004, SDD V19).
 logging:
