@@ -35,6 +35,17 @@ public class DeliveryRepository {
             ON CONFLICT (event_id, recipient_key, channel) DO NOTHING
             """;
 
+    /**
+     * Deliveries not sent yet, including DEAD ones that could be retried, become CANCELLED and lose
+     * their sealed token (REQ-FUNC-062, REQ-SEC-005). A delivery in flight keeps its lease; its
+     * worker sees CANCELLED when it records the result and keeps it (SDD V13).
+     */
+    private static final String CANCEL_UNSENT = """
+            UPDATE notification_delivery
+            SET status = 'CANCELLED', secret_ciphertext = NULL, secret_key_id = NULL
+            WHERE status IN ('PENDING', 'RETRYING', 'DEAD') AND %s = :id
+            """;
+
     private final JdbcClient jdbc;
     private final JsonMapper jsonMapper;
 
@@ -80,5 +91,27 @@ public class DeliveryRepository {
                 .param("originTraceId", delivery.originTraceId())
                 .update();
         return inserted == 1;
+    }
+
+    /**
+     * Cancels the unsent deliveries of a revoked or replaced invitation.
+     *
+     * @return how many deliveries were cancelled
+     */
+    public int cancelUnsentOfInvitation(UUID invitationId) {
+        return jdbc.sql(CANCEL_UNSENT.formatted("invitation_id"))
+                .param("id", invitationId)
+                .update();
+    }
+
+    /**
+     * Cancels every unsent delivery of a deleted workspace.
+     *
+     * @return how many deliveries were cancelled
+     */
+    public int cancelUnsentOfWorkspace(UUID workspaceId) {
+        return jdbc.sql(CANCEL_UNSENT.formatted("workspace_id"))
+                .param("id", workspaceId)
+                .update();
     }
 }

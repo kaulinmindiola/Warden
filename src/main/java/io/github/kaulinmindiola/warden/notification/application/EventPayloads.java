@@ -53,6 +53,10 @@ final class EventPayloads {
             Secret secret,
             Instant expiresAt) {}
 
+    /** {@code workspace.InvitationRevoked}: the reason is {@code REVOKED} or {@code REPLACED}. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record InvitationRevoked(UUID invitationId, String reason) {}
+
     /** {@code workspace.MemberRoleChanged}: the owners are those at the time of the change. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     record RoleChanged(
