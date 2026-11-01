@@ -98,6 +98,12 @@ warden:
       failure-rate-threshold: 50
       wait-in-open-state: 30s
       probe-calls: 3
+    # Single-use links (REQ-INT-009, DEC-053): pages of the API consumer; the token goes only in the
+    # fragment (#token=...). The defaults are the local profile values (D-05).
+    links:
+      verify-email: ${WARDEN_LINK_VERIFY_EMAIL_URL:http://localhost:3001/verify-email}
+      reset-password: ${WARDEN_LINK_RESET_PASSWORD_URL:http://localhost:3001/reset-password}
+      accept-invitation: ${WARDEN_LINK_ACCEPT_INVITATION_URL:http://localhost:3001/accept-invitation}
 
 # One JSON object per log line, including traceId and spanId from the MDC (REQ-OBS-004, SDD V19).
 logging:
