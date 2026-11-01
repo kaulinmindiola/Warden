@@ -3,6 +3,7 @@ package io.github.kaulinmindiola.warden.iam.application;
 import io.github.kaulinmindiola.warden.iam.domain.AuthSession;
 import io.github.kaulinmindiola.warden.iam.domain.RevocationStore;
 import io.github.kaulinmindiola.warden.iam.infrastructure.AuthSessionRepository;
+import io.github.kaulinmindiola.warden.iam.infrastructure.IamMetrics;
 import io.github.kaulinmindiola.warden.shared.audit.AuditAction;
 import io.github.kaulinmindiola.warden.shared.audit.AuditEntry;
 import io.github.kaulinmindiola.warden.shared.audit.AuditLog;
@@ -30,6 +31,7 @@ public class SessionService {
     private final AuthSessionRepository sessions;
     private final RevocationStore revocationStore;
     private final AuditLog auditLog;
+    private final IamMetrics metrics;
     private final Clock clock;
     private final TransactionTemplate transactions;
 
@@ -37,11 +39,13 @@ public class SessionService {
             AuthSessionRepository sessions,
             RevocationStore revocationStore,
             AuditLog auditLog,
+            IamMetrics metrics,
             Clock clock,
             PlatformTransactionManager transactionManager) {
         this.sessions = sessions;
         this.revocationStore = revocationStore;
         this.auditLog = auditLog;
+        this.metrics = metrics;
         this.clock = clock;
         this.transactions = new TransactionTemplate(transactionManager);
     }
@@ -65,20 +69,28 @@ public class SessionService {
      * @throws SessionNotFoundException if the session does not exist or belongs to someone else
      */
     public void terminate(CurrentUser user, UUID sessionId) {
-        transactions.executeWithoutResult(status -> {
-            if (!revoke(user, sessionId, AuthSession.RevokeReason.TERMINATED, AuditAction.SESSION_TERMINATED)
-                    && !sessions.existsByIdAndUserId(sessionId, user.userId())) {
+        boolean revoked = Boolean.TRUE.equals(transactions.execute(status -> {
+            boolean revokedNow =
+                    revoke(user, sessionId, AuthSession.RevokeReason.TERMINATED, AuditAction.SESSION_TERMINATED);
+            if (!revokedNow && !sessions.existsByIdAndUserId(sessionId, user.userId())) {
                 throw new SessionNotFoundException();
             }
-        });
+            return revokedNow;
+        }));
         revocationStore.markRevoked(sessionId);
+        if (revoked) {
+            metrics.sessionsRevoked(AuthSession.RevokeReason.TERMINATED, 1);
+        }
     }
 
     /** Revokes the session the request was made with (REQ-FUNC-015). Never fails if already revoked. */
     public void logout(CurrentUser user) {
-        transactions.executeWithoutResult(
-                status -> revoke(user, user.sessionId(), AuthSession.RevokeReason.LOGOUT, AuditAction.LOGOUT));
+        boolean revoked = Boolean.TRUE.equals(transactions.execute(
+                status -> revoke(user, user.sessionId(), AuthSession.RevokeReason.LOGOUT, AuditAction.LOGOUT)));
         revocationStore.markRevoked(user.sessionId());
+        if (revoked) {
+            metrics.sessionsRevoked(AuthSession.RevokeReason.LOGOUT, 1);
+        }
     }
 
     /** @return whether this call revoked the session */

@@ -7,6 +7,7 @@ import io.github.kaulinmindiola.warden.iam.domain.RevocationStore;
 import io.github.kaulinmindiola.warden.iam.domain.TokenHash;
 import io.github.kaulinmindiola.warden.iam.domain.UserAccount;
 import io.github.kaulinmindiola.warden.iam.infrastructure.AuthSessionRepository;
+import io.github.kaulinmindiola.warden.iam.infrastructure.IamMetrics;
 import io.github.kaulinmindiola.warden.iam.infrastructure.IssuedAccessToken;
 import io.github.kaulinmindiola.warden.iam.infrastructure.JwtIssuer;
 import io.github.kaulinmindiola.warden.iam.infrastructure.RefreshTokenConsumer;
@@ -67,6 +68,7 @@ public class RefreshService {
     private final TokenHasher tokenHasher;
     private final JwtIssuer jwtIssuer;
     private final RateLimiter rateLimiter;
+    private final IamMetrics metrics;
     private final UuidV7Generator ids;
     private final Clock clock;
     private final TransactionTemplate transactions;
@@ -83,6 +85,7 @@ public class RefreshService {
             TokenHasher tokenHasher,
             JwtIssuer jwtIssuer,
             RateLimiter rateLimiter,
+            IamMetrics metrics,
             UuidV7Generator ids,
             Clock clock,
             PlatformTransactionManager transactionManager) {
@@ -97,6 +100,7 @@ public class RefreshService {
         this.tokenHasher = tokenHasher;
         this.jwtIssuer = jwtIssuer;
         this.rateLimiter = rateLimiter;
+        this.metrics = metrics;
         this.ids = ids;
         this.clock = clock;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -116,6 +120,7 @@ public class RefreshService {
     public LoginResult refresh(String presented, String clientIp) {
         rateLimiter.consume(RateLimitPolicy.REFRESH_PER_IP, clientIp).requireAllowed();
         if (presented == null || !presented.startsWith(SecureTokenGenerator.REFRESH_TOKEN_PREFIX)) {
+            metrics.refresh(IamMetrics.RefreshOutcome.INVALID);
             throw new InvalidRefreshTokenException();
         }
         TokenHash presentedHash = TokenHash.of(tokenHasher.sha256(presented));
@@ -125,12 +130,18 @@ public class RefreshService {
 
         if (outcome.revokedSessionId() != null) {
             revocationStore.markRevoked(outcome.revokedSessionId());
+            metrics.refresh(IamMetrics.RefreshOutcome.REUSE);
+            metrics.sessionsRevoked(AuthSession.RevokeReason.REUSE, 1);
         }
         Rotation rotation = outcome.rotation();
         if (rotation == null) {
+            if (outcome.revokedSessionId() == null) {
+                metrics.refresh(IamMetrics.RefreshOutcome.INVALID);
+            }
             throw new InvalidRefreshTokenException();
         }
         IssuedAccessToken accessToken = jwtIssuer.issue(rotation.userId(), rotation.sessionId());
+        metrics.refresh(IamMetrics.RefreshOutcome.SUCCESS);
         long refreshExpiresIn = Duration.between(rotation.rotatedAt(), rotation.refreshExpiresAt())
                 .toSeconds();
         return new LoginResult(accessToken.value(), accessToken.expiresInSeconds(), next, refreshExpiresIn);

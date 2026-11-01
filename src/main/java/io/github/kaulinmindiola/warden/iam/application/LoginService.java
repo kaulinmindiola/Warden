@@ -9,6 +9,7 @@ import io.github.kaulinmindiola.warden.iam.domain.RefreshToken;
 import io.github.kaulinmindiola.warden.iam.domain.TokenHash;
 import io.github.kaulinmindiola.warden.iam.domain.UserAccount;
 import io.github.kaulinmindiola.warden.iam.infrastructure.AuthSessionRepository;
+import io.github.kaulinmindiola.warden.iam.infrastructure.IamMetrics;
 import io.github.kaulinmindiola.warden.iam.infrastructure.IssuedAccessToken;
 import io.github.kaulinmindiola.warden.iam.infrastructure.JwtIssuer;
 import io.github.kaulinmindiola.warden.iam.infrastructure.RefreshTokenRepository;
@@ -61,6 +62,7 @@ public class LoginService {
     private final JwtIssuer jwtIssuer;
     private final AuditLog auditLog;
     private final RateLimiter rateLimiter;
+    private final IamMetrics metrics;
     private final UuidV7Generator ids;
     private final Clock clock;
     private final TransactionTemplate transactions;
@@ -75,6 +77,7 @@ public class LoginService {
             JwtIssuer jwtIssuer,
             AuditLog auditLog,
             RateLimiter rateLimiter,
+            IamMetrics metrics,
             UuidV7Generator ids,
             Clock clock,
             PlatformTransactionManager transactionManager) {
@@ -87,6 +90,7 @@ public class LoginService {
         this.jwtIssuer = jwtIssuer;
         this.auditLog = auditLog;
         this.rateLimiter = rateLimiter;
+        this.metrics = metrics;
         this.ids = ids;
         this.clock = clock;
         this.transactions = new TransactionTemplate(transactionManager);
@@ -106,11 +110,9 @@ public class LoginService {
     public LoginResult login(String rawEmail, String password, String userAgent, String clientIp) {
         EmailAddress email = parseEmail(rawEmail);
         if (email != null) {
-            rateLimiter
-                    .check(RateLimitPolicy.LOGIN_FAILURES_PER_EMAIL, email.value())
-                    .requireAllowed();
+            requireAllowed(rateLimiter.check(RateLimitPolicy.LOGIN_FAILURES_PER_EMAIL, email.value()));
         }
-        rateLimiter.consume(RateLimitPolicy.LOGIN_PER_IP, clientIp).requireAllowed();
+        requireAllowed(rateLimiter.consume(RateLimitPolicy.LOGIN_PER_IP, clientIp));
 
         String candidate = password == null ? "" : password;
         UserAccount account = email == null ? null : accounts.findByEmail(email).orElse(null);
@@ -126,6 +128,7 @@ public class LoginService {
                     account == null ? null : account.id(),
                     null,
                     Map.of("reason", "invalid_credentials")));
+            metrics.login(IamMetrics.LoginOutcome.FAILURE);
             throw new InvalidCredentialsException();
         }
 
@@ -136,9 +139,18 @@ public class LoginService {
                 transactions.execute(status -> startSession(account.id(), rehashed, refreshToken, userAgent));
 
         IssuedAccessToken accessToken = jwtIssuer.issue(account.id(), started.sessionId());
+        metrics.login(IamMetrics.LoginOutcome.SUCCESS);
         long refreshExpiresIn = Duration.between(started.startedAt(), started.refreshExpiresAt())
                 .toSeconds();
         return new LoginResult(accessToken.value(), accessToken.expiresInSeconds(), refreshToken, refreshExpiresIn);
+    }
+
+    /** Counts a login rejected by a rate limit, then rejects it with 429. */
+    private void requireAllowed(RateLimiter.Decision decision) {
+        if (!decision.allowed()) {
+            metrics.login(IamMetrics.LoginOutcome.RATE_LIMITED);
+        }
+        decision.requireAllowed();
     }
 
     /** The normalized e-mail, or {@code null} when it is missing or malformed. */
