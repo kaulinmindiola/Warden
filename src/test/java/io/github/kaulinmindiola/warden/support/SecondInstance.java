@@ -52,6 +52,11 @@ public final class SecondInstance implements AutoCloseable {
                 "warden.keys.hmac-key", base64(keys.hmacKey().getEncoded())));
     }
 
+    /** Starts an instance with its own ephemeral keys and the given properties on top of the test ones. */
+    public static SecondInstance withProperties(Map<String, Object> properties) {
+        return start(properties);
+    }
+
     private static SecondInstance start(Map<String, Object> extra) {
         Map<String, Object> properties = new HashMap<>(SharedContainers.properties());
         properties.putAll(extra);
@@ -69,6 +74,11 @@ public final class SecondInstance implements AutoCloseable {
     /** The base URL of this instance's API, for example {@code http://localhost:54321/api/v1}. */
     public String apiUrl() {
         return "http://localhost:" + context.getEnvironment().getProperty("local.server.port") + IamTestClient.API;
+    }
+
+    /** The base URL of this instance's actuator, for example {@code http://localhost:54322/actuator}. */
+    public String managementUrl() {
+        return "http://localhost:" + context.getEnvironment().getProperty("local.management.port") + "/actuator";
     }
 
     /** A bean of this instance. */

@@ -10,6 +10,11 @@ spring:
     virtual:
       enabled: true
 
+  # On SIGTERM the instance stops taking requests and claiming work, and waits up to 30 s for what
+  # is in progress before closing its connections (REQ-AVAIL-002, SDD V17).
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
   # Request parameters and headers, Authorization included, are never written to the log, not even
   # at DEBUG (REQ-OBS-005, SDD V19). No request or response body is logged anywhere.
   mvc:
@@ -135,6 +140,9 @@ logging:
 # Actuator runs on a separate port that is never published outside the deployment network.
 # Readiness depends on PostgreSQL and on the application accepting traffic, never on Redis, whose
 # failure is degraded (REQ-AVAIL-001, SDD V17). Liveness reports only the application state.
+server:
+  shutdown: graceful
+
 management:
   server:
     port: ${WARDEN_MANAGEMENT_PORT:8081}
