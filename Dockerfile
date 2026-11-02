@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # Container image of Warden (CON-009, SDD V21): built from source in a JDK stage, run as a
 # non-root user on a JRE with the Spring Boot jar extracted in layers, so a code change rebuilds
@@ -6,10 +6,10 @@
 #
 #   docker build -t warden:local .
 #
-# The base images are pinned by tag here; the reference environment pins every image by digest.
+# Every image is pinned by digest, the syntax image included (REQ-BUILD-003).
 
 # ---- Build: compile and package with the Maven wrapper (tests run in CI, not here) ----
-FROM eclipse-temurin:21-jdk-noble AS build
+FROM eclipse-temurin:21-jdk-noble@sha256:114cabb73033ca4ce7ceec3deb62396bc1b716282bae051ed3c1d82e38fcab2d AS build
 WORKDIR /workspace
 
 COPY .mvn/ .mvn/
@@ -21,16 +21,22 @@ RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -ntp -Dmaven.test.skip=true -D
     && java -Djarmode=tools -jar app.jar extract --layers --launcher --destination extracted
 
 # ---- Runtime: JRE only, non-root, layers from the least to the most frequently changed ----
-FROM eclipse-temurin:21-jre-noble AS runtime
+FROM eclipse-temurin:21-jre-noble@sha256:0eda5830ed7b669abc246a8dc520ea8a23cab06f9a8d4b6964109e2f2394e46f AS runtime
 
+# The key directory belongs to the runtime user, so a volume mounted on it is writable when the
+# entry point generates the key file of the reference environment.
 RUN groupadd --system --gid 10001 warden \
-    && useradd --system --uid 10001 --gid warden --no-create-home --shell /usr/sbin/nologin warden
+    && useradd --system --uid 10001 --gid warden --no-create-home --shell /usr/sbin/nologin warden \
+    && mkdir -p /var/lib/warden/keys \
+    && chown warden:warden /var/lib/warden/keys \
+    && chmod 700 /var/lib/warden/keys
 
 WORKDIR /app
 COPY --from=build --chown=warden:warden /workspace/extracted/dependencies/ ./
 COPY --from=build --chown=warden:warden /workspace/extracted/spring-boot-loader/ ./
 COPY --from=build --chown=warden:warden /workspace/extracted/snapshot-dependencies/ ./
 COPY --from=build --chown=warden:warden /workspace/extracted/application/ ./
+COPY --chmod=0555 src/main/docker/entrypoint.sh /usr/local/bin/warden-entrypoint
 
 USER 10001:10001
 
@@ -38,7 +44,6 @@ USER 10001:10001
 # port (8081) is deliberately not exposed: it is reached only inside the deployment network.
 EXPOSE 8080 8443
 
-# The JVM is PID 1, so it receives SIGTERM itself and shuts down gracefully (REQ-AVAIL-002). The
-# heap takes at most 60 % of the container's memory limit; the rest is left to metaspace, threads,
-# direct buffers and Argon2 (ADR-010). JAVA_TOOL_OPTIONS adds options without rebuilding.
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=60", "-XX:+ExitOnOutOfMemoryError", "org.springframework.boot.loader.launch.JarLauncher"]
+# The entry point execs the JVM, which runs as PID 1 with -XX:MaxRAMPercentage=60 and receives
+# SIGTERM itself (REQ-AVAIL-002); it also reads the key file named by WARDEN_KEYS_FILE, if any.
+ENTRYPOINT ["/usr/local/bin/warden-entrypoint"]
