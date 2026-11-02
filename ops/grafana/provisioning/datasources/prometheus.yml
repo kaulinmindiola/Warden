@@ -1,0 +1,13 @@
+# Grafana data source of the reference environment (REQ-OBS-007): the Prometheus of compose.yaml.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s

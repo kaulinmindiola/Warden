@@ -1,0 +1,24 @@
+# Prometheus of the reference environment (REQ-OBS-007, SDD V19, ADR-018). It scrapes the
+# management port of every Warden instance inside the Compose network, where the port is never
+# published, and evaluates the alert rules of alerts.yml. There is no Alertmanager: alerts are
+# observed as firing in the Prometheus UI (http://localhost:9090/alerts).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: warden
+    metrics_path: /actuator/prometheus
+    # One target per running instance: warden-2 exists only with the scale profile, and a name
+    # that does not resolve simply yields no target.
+    dns_sd_configs:
+      - names: [warden, warden-2]
+        type: A
+        port: 8081
+        refresh_interval: 15s
+    relabel_configs:
+      - source_labels: [__meta_dns_name]
+        target_label: instance

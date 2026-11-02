@@ -1,0 +1,12 @@
+# Loads the versioned dashboards of ops/grafana/dashboards at startup (REQ-OBS-007). They are
+# read-only in the UI: a change is made in the JSON file and versioned.
+apiVersion: 1
+
+providers:
+  - name: warden
+    folder: Warden
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
