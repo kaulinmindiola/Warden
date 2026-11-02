@@ -1,0 +1,84 @@
+# Unit tests of alerts.yml, run with promtool (see alerts.yml).
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: an open breaker alerts after 5 minutes, per provider
+    interval: 1m
+    input_series:
+      - series: 'warden_provider_circuit_state{job="warden", instance="warden", provider="A", state="open"}'
+        values: '0 1x10'
+      - series: 'warden_provider_circuit_state{job="warden", instance="warden", provider="B", state="open"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ProviderCircuitOpen
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: ProviderCircuitOpen
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              provider: A
+            exp_annotations:
+              summary: "The circuit breaker of provider A has been open for 5 minutes"
+
+  - name: a growing system dead-letter queue alerts, a steady one does not
+    interval: 1m
+    input_series:
+      - series: 'warden_notification_deliveries{job="warden", instance="warden", status="dead", scope="system"}'
+        values: '0x5 1x10'
+      - series: 'warden_notification_deliveries{job="warden", instance="warden-2", status="dead", scope="system"}'
+        values: '0x5 1x10'
+      - series: 'warden_notification_deliveries{job="warden", instance="warden", status="dead", scope="workspace"}'
+        values: '2x15'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: DlqGrowing
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: DlqGrowing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              scope: system
+            exp_annotations:
+              summary: "The dead-letter queue of the system scope grew in the last 15 minutes"
+
+  - name: more than 10 refresh token reuses in 5 minutes alert
+    interval: 1m
+    input_series:
+      - series: 'warden_auth_refresh_total{job="warden", instance="warden", outcome="reuse"}'
+        values: '0+1x5 5+4x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: RefreshReuseSpike
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: RefreshReuseSpike
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: "More than 10 refresh tokens were reused in 5 minutes"
+
+  - name: an instance that stops answering its scrape alerts after 1 minute
+    interval: 1m
+    input_series:
+      - series: 'up{job="warden", instance="warden"}'
+        values: '1 1 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: WardenNotReady
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: WardenNotReady
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: warden
+              instance: warden
+            exp_annotations:
+              summary: "Warden instance warden has not answered its scrape for 1 minute"

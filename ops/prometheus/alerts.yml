@@ -1,0 +1,44 @@
+# Alert rules of SDD V19 (REQ-OBS-007, ADR-018). Gauges that count database rows are the same in
+# every instance, so they are aggregated with max, never added up. alerts.test.yml tests the rules:
+#
+#   docker compose run --rm --entrypoint promtool prometheus test rules /etc/prometheus/alerts.test.yml
+groups:
+  - name: warden
+    rules:
+      - alert: ProviderCircuitOpen
+        expr: max by (provider) (warden_provider_circuit_state{state="open"}) == 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The circuit breaker of provider {{ $labels.provider }} has been open for 5 minutes"
+
+      - alert: DlqGrowing
+        expr: delta(max by (scope) (warden_notification_deliveries{status="dead"})[15m:1m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "The dead-letter queue of the {{ $labels.scope }} scope grew in the last 15 minutes"
+
+      - alert: OutboxLagHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(warden_outbox_lag_seconds_bucket[5m]))) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The p95 outbox lag has been above 5 s for 5 minutes (REQ-PERF-004)"
+
+      - alert: RefreshReuseSpike
+        expr: sum(increase(warden_auth_refresh_total{outcome="reuse"}[5m])) > 10
+        labels:
+          severity: critical
+        annotations:
+          summary: "More than 10 refresh tokens were reused in 5 minutes"
+
+      - alert: WardenNotReady
+        expr: up{job="warden"} == 0 or absent(up{job="warden", instance="warden"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Warden instance {{ $labels.instance }} has not answered its scrape for 1 minute"
